@@ -9,3 +9,8 @@ deploy/
 .playwright-cli/
 *.png
 start.bat
+
+data
+wsgi.py
+__pycache__/
+*.pyc

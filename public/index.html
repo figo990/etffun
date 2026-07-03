@@ -138,7 +138,7 @@ function render(data){
   if(data)allData=data;
   const q=(document.getElementById('searchInput').value||'').trim().toLowerCase();
   const exch=document.getElementById('exchangeFilter').value;
-  const ext=document.querySelector('#filterGroup .active')?.dataset?.filter||'hj';
+  const ext=document.querySelector('#filterGroup .active')?.dataset?.filter??'hj';
   let f=allData;
   if(q)f=f.filter(d=>d.代码.includes(q)||d.名称.includes(q));
   if(exch)f=f.filter(d=>d.交易所===exch);
@@ -238,7 +238,7 @@ document.querySelectorAll('th.srt').forEach(th=>{
   th.addEventListener('click',()=>{
     const key=th.dataset.key;
     if(sortKey===key)sortAsc=!sortAsc;
-    else{sortKey=key;sortAsc=true;}
+    else{sortKey=key;sortAsc=false;}
     document.querySelectorAll('th.srt').forEach(t=>t.classList.remove('asc','desc'));
     th.classList.add(sortAsc?'asc':'desc');
     render();
