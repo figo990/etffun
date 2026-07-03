@@ -7,7 +7,6 @@ import os
 import io
 import requests
 import warnings
-import threading
 from datetime import datetime, timedelta
 
 app = Flask(__name__, static_folder='public')
@@ -150,33 +149,43 @@ def calc_batch_price_ret(spot_data, date_str, snapshots):
 
 # ---- share snapshots for weekly/monthly share changes ----
 
-SHARE_SNAPSHOT_PATH = os.path.join(DATA_DIR, 'share_snapshots.json')
+SHARE_HISTORY_PATH = os.path.join(DATA_DIR, 'share_history.json')
+SHARE_DAILY_PATH = os.path.join(DATA_DIR, 'share_daily.json')
 
-def update_share_snapshot(share_map, date_str):
-    snapshots = load_json(SHARE_SNAPSHOT_PATH) or {}
-    if date_str in snapshots:
-        return snapshots
-    snapshots[date_str] = share_map
-    dates = sorted(snapshots.keys(), reverse=True)
+def save_today_snapshot(share_map, date_str):
+    daily = load_json(SHARE_DAILY_PATH) or {}
+    daily[date_str] = share_map
+    dates = sorted(daily.keys(), reverse=True)
     clean = {}
     for d in dates[:100]:
-        clean[d] = snapshots[d]
-    save_json(SHARE_SNAPSHOT_PATH, clean)
-    return snapshots
+        clean[d] = daily[d]
+    save_json(SHARE_DAILY_PATH, clean)
+
+def load_all_share_snapshots():
+    hist = load_json(SHARE_HISTORY_PATH) or {}
+    daily = load_json(SHARE_DAILY_PATH) or {}
+    merged = {}
+    for k, v in hist.items():
+        merged[k] = v
+    for k, v in daily.items():
+        if k not in merged:
+            merged[k] = v
+        else:
+            m = dict(merged[k])
+            for code, val in v.items():
+                if code not in m:
+                    m[code] = val
+            merged[k] = m
+    return merged
 
 def calc_batch_share_change(share_map_today, date_str, snapshots):
     if not snapshots:
         return {}, {}, {}, {}
     dates = sorted(snapshots.keys())
     try:
-        idx = dates.index(date_str)
+        idx = dates.index(date_str) if date_str in dates else len(dates) - 1
     except ValueError:
-        for i, d in enumerate(dates):
-            if d >= date_str:
-                idx = i
-                break
-        else:
-            idx = len(dates) - 1
+        idx = len(dates) - 1
     weekly_chg_map, monthly_chg_map = {}, {}
     weekly_pct_map, monthly_pct_map = {}, {}
     for code, today in share_map_today.items():
@@ -317,8 +326,9 @@ def build_etf_data():
                 '汇金持股_亿': hj.get('汇金总持股(亿)'),
             })
 
-    share_snapshots = update_share_snapshot(all_share_map, date_key)
-    w_chg, m_chg, w_pct, m_pct = calc_batch_share_change(all_share_map, date_key, share_snapshots)
+    save_today_snapshot(all_share_map, date_key)
+    snapshots = load_all_share_snapshots()
+    w_chg, m_chg, w_pct, m_pct = calc_batch_share_change(all_share_map, date_key, snapshots)
 
     for item in items:
         code = item['代码']
@@ -351,12 +361,12 @@ def index():
 
 def auto_backfill():
     try:
-        share_snapshots = load_json(SHARE_SNAPSHOT_PATH) or {}
+        hist = load_json(SHARE_HISTORY_PATH) or {}
         today = datetime.now()
-        trading_days = get_recent_trading_days(today, 30)
+        trading_days = get_recent_trading_days(today, 65)
         added = 0
         for d in trading_days:
-            if d in share_snapshots:
+            if d in hist:
                 continue
             try:
                 df = ak.fund_etf_scale_sse(date=d)
@@ -365,26 +375,21 @@ def auto_backfill():
                 smap = {}
                 for _, row in df.iterrows():
                     smap[str(row['基金代码'])] = float(row['基金份额'])
-                share_snapshots[d] = smap
+                hist[d] = smap
                 added += 1
+                if added % 15 == 0:
+                    save_json(SHARE_HISTORY_PATH, dict(sorted(hist.items())))
+                    print(f"  backfill progress: {len(hist)} days")
             except:
                 continue
         if added:
-            save_json(SHARE_SNAPSHOT_PATH, dict(sorted(share_snapshots.items())))
-            print(f"Backfilled {added} days of SSE share data")
+            save_json(SHARE_HISTORY_PATH, dict(sorted(hist.items())))
+            print(f"Backfilled {added} days (total {len(hist)} days)")
     except Exception as e:
         print(f"Backfill error: {e}")
 
-def warm_cache():
-    try:
-        print("Warming cache...")
-        auto_backfill()
-        items = build_etf_data()
-        _etf_cache.update({'data': items, 'time': datetime.now()})
-        print(f"Cache warmed: {len(items)} ETFs")
-    except Exception as e:
-        print(f"Warm cache error: {e}")
+auto_backfill()
 
 if __name__ == '__main__':
-    threading.Thread(target=warm_cache, daemon=True).start()
+    print("Starting dev server...")
     app.run(host='127.0.0.1', port=5000, debug=False)

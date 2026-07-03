@@ -47,6 +47,13 @@ tr:hover td{background:#1e1e30}
 .footer a{color:#6f9eff;text-decoration:none}
 .btn{background:transparent;border:1px solid #2a2a4a;color:#e0e0e5;padding:6px 16px;border-radius:6px;font-size:14px;cursor:pointer;transition:.1s}
 .btn:hover{background:#2a2a4a;border-color:#6f9eff}
+.btn-group{display:flex;gap:4px}
+.btn-filter{background:transparent;border:1px solid #2a2a4a;color:#8c909a;padding:6px 12px;font-size:13px;cursor:pointer;transition:.1s}
+.btn-filter:first-child{border-radius:6px 0 0 6px}
+.btn-filter:last-child{border-radius:0 6px 6px 0}
+.btn-filter:only-child{border-radius:6px}
+.btn-filter:hover{background:#2a2a4a;color:#e0e0e5}
+.btn-filter.active{background:#1a3355;border-color:#6f9eff;color:#6f9eff}
 .tooltip{position:relative;cursor:help;border-bottom:1px dotted #5a5a7a}
 .tooltip:hover::after{content:attr(data-tip);position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:#1a1a2e;border:1px solid #2a2a4a;padding:5px 9px;border-radius:4px;font-size:12px;white-space:nowrap;z-index:10;color:#e0e0e5}
 @media(max-width:700px){.search-box{width:150px}.header h1{font-size:17px}}
@@ -58,7 +65,11 @@ tr:hover td{background:#1e1e30}
   <div class="controls">
     <input class="search-box" id="searchInput" placeholder="搜索代码/名称..." autocomplete="off">
     <select id="exchangeFilter"><option value="">全部交易所</option><option value="沪">沪市</option><option value="深">深市</option></select>
-    <select id="extraFilter"><option value="">全部ETF</option><option value="hj">仅汇金持仓</option><option value="change">仅份额异动</option></select>
+    <div class="btn-group" id="filterGroup">
+      <button class="btn-filter" data-filter="">全部ETF</button>
+      <button class="btn-filter active" data-filter="hj">仅汇金持仓</button>
+      <button class="btn-filter" data-filter="change">仅份额异动</button>
+    </div>
     <button class="btn" id="refreshBtn">刷新</button>
     <span style="font-size:13px;color:#5a5a7a" id="updateTime"></span>
   </div>
@@ -87,7 +98,7 @@ tr:hover td{background:#1e1e30}
   <div style="display:none" id="loadingState"></div>
 </table></div>
 <div class="footer">
-  份额数据:上交所/深交所 via akshare | 行情:东方财富 | 汇金持仓:2025年报/四季报 | 周/月份额改变需运行数日累积
+  份额数据:上交所/深交所 via akshare | 行情:东方财富 | 汇金持仓:2025年报(待更新至2026年中报) | 周/月份额改变需运行数日累积
   | <a href="https://fund.eastmoney.com/" target="_blank">天天基金</a>
 </div>
 <script>
@@ -127,7 +138,7 @@ function render(data){
   allData=data;
   const q=(document.getElementById('searchInput').value||'').trim().toLowerCase();
   const exch=document.getElementById('exchangeFilter').value;
-  const ext=document.getElementById('extraFilter').value;
+  const ext=document.querySelector('#filterGroup .active')?.dataset?.filter||'hj';
   let f=data;
   if(q)f=f.filter(d=>d.代码.includes(q)||d.名称.includes(q));
   if(exch)f=f.filter(d=>d.交易所===exch);
@@ -203,7 +214,13 @@ async function loadData(){
 let searchTimer;
 document.getElementById('searchInput').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>render(allData),150);});
 document.getElementById('exchangeFilter').addEventListener('change',()=>render(allData));
-document.getElementById('extraFilter').addEventListener('change',()=>render(allData));
+document.getElementById('filterGroup').addEventListener('click',e=>{
+  const btn=e.target.closest('.btn-filter');
+  if(!btn)return;
+  document.querySelectorAll('#filterGroup .btn-filter').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  render(allData);
+});
 document.getElementById('refreshBtn').addEventListener('click',loadData);
 document.querySelectorAll('th.srt').forEach(th=>{
   th.addEventListener('click',()=>{
