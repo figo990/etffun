@@ -7,6 +7,7 @@ import os
 import io
 import requests
 import warnings
+import threading
 from datetime import datetime, timedelta
 
 app = Flask(__name__, static_folder='public')
@@ -225,9 +226,12 @@ def load_huijin():
 
 # ---- routes ----
 
+RESPONSE_CACHE_PATH = os.path.join(DATA_DIR, 'response_cache.json')
 _etf_cache = {'data': None, 'time': None}
+_price_cache = {'data': None, 'time': None}
 
-def build_etf_data():
+def build_shares_only():
+    """Return ETF items without price/spot data – fast (no fund_etf_spot_em)."""
     today = datetime.now()
     today_str = to_ymd(today)
     trading_days = get_recent_trading_days(today, 25)
@@ -253,18 +257,10 @@ def build_etf_data():
                 continue
 
     szse_data = get_szse_scale()
-    spot_data = get_spot_data()
-
     date_key = data_date or today_str
-    price_snapshots = {}
-    if spot_data:
-        price_snapshots = update_price_snapshot(spot_data, date_key)
-    weekly_ret_map, monthly_ret_map = calc_batch_price_ret(spot_data, date_key, price_snapshots)
-
     huijin = load_huijin()
     szse_yesterday_path = os.path.join(DATA_DIR, 'szse_yesterday.json')
     yesterday_snapshot = load_json(szse_yesterday_path)
-
     all_share_map = {}
     items = []
 
@@ -278,7 +274,6 @@ def build_etf_data():
             yesterday_share = float(sse_map[code]) if code in sse_map else None
             change_d = today_share - yesterday_share if yesterday_share is not None else None
             change_d_pct = round(change_d / yesterday_share * 100, 2) if yesterday_share and yesterday_share > 0 else None
-            spot = spot_data.get(code, {})
             hj = huijin.get(code, {})
             all_share_map[code] = today_share
             items.append({
@@ -287,10 +282,6 @@ def build_etf_data():
                 '总份额_亿': round(today_share / 1e8, 4),
                 '份额日改变': round(change_d / 1e4, 2) if change_d is not None else None,
                 '份额日改变比例': change_d_pct,
-                '最新价': spot.get('最新价'),
-                '涨跌幅': spot.get('涨跌幅'),
-                '周涨跌幅': weekly_ret_map.get(code),
-                '月涨跌幅': monthly_ret_map.get(code),
                 '比汇金改变比': round(change_d / 1e8 / hj['汇金总持股(亿)'] * 100, 4) if change_d is not None and hj.get('汇金总持股(亿)') else None,
                 '汇金持股_亿': hj.get('汇金总持股(亿)'),
             })
@@ -302,14 +293,12 @@ def build_etf_data():
             today_share = float(row['基金份额'])
             today_snapshot[code] = today_share
         save_json(szse_yesterday_path, today_snapshot)
-
         for _, row in szse_data.iterrows():
             code = str(row['基金代码'])
             today_share = float(row['基金份额'])
             yesterday_share = yesterday_snapshot.get(code) if yesterday_snapshot else None
             change_d = today_share - yesterday_share if yesterday_share is not None else None
             change_d_pct = round(change_d / yesterday_share * 100, 2) if yesterday_share and yesterday_share > 0 else None
-            spot = spot_data.get(code, {})
             hj = huijin.get(code, {})
             all_share_map[code] = today_share
             items.append({
@@ -318,10 +307,6 @@ def build_etf_data():
                 '总份额_亿': round(today_share / 1e8, 4),
                 '份额日改变': round(change_d / 1e4, 2) if change_d is not None else None,
                 '份额日改变比例': change_d_pct,
-                '最新价': spot.get('最新价'),
-                '涨跌幅': spot.get('涨跌幅'),
-                '周涨跌幅': weekly_ret_map.get(code),
-                '月涨跌幅': monthly_ret_map.get(code),
                 '比汇金改变比': round(change_d / 1e8 / hj['汇金总持股(亿)'] * 100, 4) if change_d is not None and hj.get('汇金总持股(亿)') else None,
                 '汇金持股_亿': hj.get('汇金总持股(亿)'),
             })
@@ -329,15 +314,30 @@ def build_etf_data():
     save_today_snapshot(all_share_map, date_key)
     snapshots = load_all_share_snapshots()
     w_chg, m_chg, w_pct, m_pct = calc_batch_share_change(all_share_map, date_key, snapshots)
-
     for item in items:
         code = item['代码']
         item['份额周改变'] = w_chg.get(code)
         item['份额月改变'] = m_chg.get(code)
         item['份额周改变比例'] = w_pct.get(code)
         item['份额月改变比例'] = m_pct.get(code)
+    return items, date_key
 
-    return items
+def build_prices(date_key):
+    """Return price/spot data for all ETFs – the slow part (fund_etf_spot_em)."""
+    spot_data = get_spot_data()
+    price_snapshots = {}
+    if spot_data:
+        price_snapshots = update_price_snapshot(spot_data, date_key)
+    weekly_ret_map, monthly_ret_map = calc_batch_price_ret(spot_data, date_key, price_snapshots)
+    result = {}
+    for code, info in spot_data.items():
+        result[code] = {
+            '最新价': info.get('最新价'),
+            '涨跌幅': info.get('涨跌幅'),
+            '周涨跌幅': weekly_ret_map.get(code),
+            '月涨跌幅': monthly_ret_map.get(code),
+        }
+    return result
 
 @app.route('/api/etf/all')
 def get_all_etf():
@@ -345,14 +345,63 @@ def get_all_etf():
     if _etf_cache['data'] is not None and _etf_cache['time'] is not None:
         if (now - _etf_cache['time']).total_seconds() < 300:
             return jsonify(_etf_cache['data'])
+    cached = load_json(RESPONSE_CACHE_PATH)
+    if cached:
+        _etf_cache.update({'data': cached, 'time': now})
+        threading.Thread(target=lambda: _refresh_cache(), daemon=True).start()
+        return jsonify(cached)
     try:
-        items = build_etf_data()
+        items, date_key = build_shares_only()
+        prices = build_prices(date_key)
+        for item in items:
+            p = prices.get(item['代码'], {})
+            item.update(p)
         _etf_cache.update({'data': items, 'time': now})
+        save_json(RESPONSE_CACHE_PATH, items)
         return jsonify(items)
     except Exception as e:
         print(f"get_all_etf error: {e}")
         if _etf_cache['data'] is not None:
             return jsonify(_etf_cache['data'])
+        return jsonify({'error': str(e)}), 500
+
+def _refresh_cache():
+    try:
+        items, date_key = build_shares_only()
+        prices = build_prices(date_key)
+        for item in items:
+            p = prices.get(item['代码'], {})
+            item.update(p)
+        _etf_cache.update({'data': items, 'time': datetime.now()})
+        save_json(RESPONSE_CACHE_PATH, items)
+        print("Background cache refresh done")
+    except Exception as e:
+        print(f"Background cache refresh error: {e}")
+
+@app.route('/api/etf/prices')
+def get_prices():
+    now = datetime.now()
+    if _price_cache['data'] is not None and _price_cache['time'] is not None:
+        if (now - _price_cache['time']).total_seconds() < 300:
+            return jsonify(_price_cache['data'])
+    try:
+        today = to_ymd(datetime.now())
+        trading_days = get_recent_trading_days(datetime.now(), 25)
+        data_date = today
+        for d in trading_days:
+            try:
+                ak.fund_etf_scale_sse(date=d)
+                data_date = d
+                break
+            except:
+                continue
+        prices = build_prices(data_date)
+        _price_cache.update({'data': prices, 'time': now})
+        return jsonify(prices)
+    except Exception as e:
+        print(f"get_prices error: {e}")
+        if _price_cache['data'] is not None:
+            return jsonify(_price_cache['data'])
         return jsonify({'error': str(e)}), 500
 
 @app.route('/')

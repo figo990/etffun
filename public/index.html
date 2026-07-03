@@ -135,11 +135,11 @@ function fmtHj(v){
 }
 
 function render(data){
-  allData=data;
+  if(data)allData=data;
   const q=(document.getElementById('searchInput').value||'').trim().toLowerCase();
   const exch=document.getElementById('exchangeFilter').value;
   const ext=document.querySelector('#filterGroup .active')?.dataset?.filter||'hj';
-  let f=data;
+  let f=allData;
   if(q)f=f.filter(d=>d.代码.includes(q)||d.名称.includes(q));
   if(exch)f=f.filter(d=>d.交易所===exch);
   if(ext==='hj')f=f.filter(d=>d.汇金持股_亿!==null&&d.汇金持股_亿!==undefined);
@@ -200,26 +200,38 @@ function render(data){
   document.getElementById('updateTime').textContent=`更新: ${new Date().toLocaleString()}`;
 }
 
+let loadTimer;
 async function loadData(){
-  document.getElementById('tbody').innerHTML='<tr><td colspan="16" class="loading">加载数据中...</td></tr>';
+  document.getElementById('tbody').innerHTML='<tr><td colspan="16" class="loading">加载份额数据...</td></tr>';
   try{
     const r=await fetch('/api/etf/all');
     const d=await r.json();
-    render(d);
+    allData=d;
+    render(allData);
+    // lazy load prices in background
+    fetch('/api/etf/prices').then(r=>r.json()).then(prices=>{
+      let updated=0;
+      for(const item of allData){
+        const p=prices[item.代码];
+        if(!p)continue;
+        if(p.最新价!==undefined&&p.最新价!==item.最新价){item.最新价=p.最新价;item.涨跌幅=p.涨跌幅;item.周涨跌幅=p.周涨跌幅;item.月涨跌幅=p.月涨跌幅;updated++;}
+      }
+      if(updated)render(allData);
+    }).catch(()=>{});
   }catch(e){
     document.getElementById('tbody').innerHTML=`<tr><td colspan="16" class="error">加载失败: ${e.message}</td></tr>`;
   }
 }
 
 let searchTimer;
-document.getElementById('searchInput').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>render(allData),150);});
-document.getElementById('exchangeFilter').addEventListener('change',()=>render(allData));
+document.getElementById('searchInput').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>render(),150);});
+document.getElementById('exchangeFilter').addEventListener('change',()=>render());
 document.getElementById('filterGroup').addEventListener('click',e=>{
   const btn=e.target.closest('.btn-filter');
   if(!btn)return;
   document.querySelectorAll('#filterGroup .btn-filter').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  render(allData);
+  render();
 });
 document.getElementById('refreshBtn').addEventListener('click',loadData);
 document.querySelectorAll('th.srt').forEach(th=>{
@@ -229,7 +241,7 @@ document.querySelectorAll('th.srt').forEach(th=>{
     else{sortKey=key;sortAsc=true;}
     document.querySelectorAll('th.srt').forEach(t=>t.classList.remove('asc','desc'));
     th.classList.add(sortAsc?'asc':'desc');
-    render(allData);
+    render();
   });
 });
 
