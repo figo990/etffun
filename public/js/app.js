@@ -1117,15 +1117,17 @@ document.getElementById('sectorFlowToggle').addEventListener('click', () => {
 updateFilterBadge();
 loadData();
 
-// Row click → detail panel
+// Code column click -> detail panel
 document.getElementById('tbody').addEventListener('click', (e) => {
-  const tr = e.target.closest('tr');
+  const td = e.target.closest('td.cell-code');
+  if(!td) return;
+  const tr = td.closest('tr');
   if(!tr || !tr.dataset.code) return;
   const code = tr.dataset.code;
   const d = allData.find(x => x['代码'] === code);
   if(!d) return;
   openDetail(code, d['名称']);
-  // Close mobile filter/col panels if open
+  // Close mobile filter/col panels
   document.getElementById('filterPanel').classList.remove('open');
   document.getElementById('colPanel').style.display = 'none';
 });

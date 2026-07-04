@@ -6,11 +6,14 @@ os.environ['PYTHONUNBUFFERED'] = '1'
 
 import akshare as ak
 import pandas as pd
+import time
 from datetime import datetime
 from db import upsert_kline, get_all_codes, get_codes_with_kline, execute
 
 
-BATCH_SIZE = 50
+BATCH_SIZE = 30
+API_DELAY = 0.5
+RETRY_DELAY = 3
 START_DATE = '2024-01-01'
 END_DATE = datetime.now().strftime('%Y-%m-%d')
 
@@ -23,13 +26,21 @@ def backfill_kline():
 
     total_rows = 0
     batch = []
+    errors = 0
     for i, code in enumerate(todo):
-        try:
-            df = ak.fund_etf_hist_em(symbol=code, period='daily',
-                                     start_date=START_DATE, end_date=END_DATE, adjust='')
-        except Exception as e:
-            print(f"  [{i+1}/{len(todo)}] {code} ERROR: {e}")
+        for attempt in range(3):
+            try:
+                df = ak.fund_etf_hist_em(symbol=code, period='daily',
+                                         start_date=START_DATE, end_date=END_DATE, adjust='')
+                break
+            except Exception:
+                time.sleep(RETRY_DELAY * (attempt + 1))
+                continue
+        else:
+            errors += 1
+            print(f"  [{i+1}/{len(todo)}] {code} ERROR after 3 retries")
             continue
+
         if df is None or df.empty:
             print(f"  [{i+1}/{len(todo)}] {code} empty")
             continue
@@ -60,16 +71,18 @@ def backfill_kline():
         if len(batch) >= BATCH_SIZE:
             upsert_kline(batch)
             total_rows += len(batch)
-            print(f"  [{i+1}/{len(todo)}] {code}: {len(rows)} rows, batch saved ({total_rows} total)")
+            print(f"  [{i+1}/{len(todo)}] {code}: {len(rows)} rows, batch saved ({total_rows} total, {errors} errors)")
             batch = []
         else:
             print(f"  [{i+1}/{len(todo)}] {code}: {len(rows)} rows")
+
+        time.sleep(API_DELAY)
 
     if batch:
         upsert_kline(batch)
         total_rows += len(batch)
 
-    print(f"\nDone. Total rows inserted: {total_rows}")
+    print(f"\nDone. Total rows inserted: {total_rows}, errors: {errors}")
 
 
 if __name__ == '__main__':

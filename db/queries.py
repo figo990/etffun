@@ -554,13 +554,16 @@ def upsert_kline(records):
 
 
 def query_kline(code, limit=120):
-    return _to_records(query("""
-        SELECT date, open, high, low, close, volume, amount, amplitude, turnover
-        FROM daily_kline
-        WHERE code = ? AND close IS NOT NULL
-        ORDER BY date DESC
-        LIMIT ?
-    """, [code, limit]))
+    try:
+        return _to_records(query("""
+            SELECT date, open, high, low, close, volume, amount, amplitude, turnover
+            FROM daily_kline
+            WHERE code = ? AND close IS NOT NULL
+            ORDER BY date DESC
+            LIMIT ?
+        """, [code, limit]))
+    except Exception:
+        return []
 
 
 def get_codes_with_kline():
@@ -588,12 +591,15 @@ def upsert_sector_fund_flow(records):
 
 
 def query_latest_sector_flow():
-    return _to_records(query("""
-        SELECT sector_name, net_main, net_super_large, net_large, net_medium, net_small
-        FROM sector_fund_flow
-        WHERE date = (SELECT MAX(date) FROM sector_fund_flow)
-        ORDER BY ABS(net_main) DESC
-    """))
+    try:
+        return _to_records(query("""
+            SELECT sector_name, net_main, net_super_large, net_large, net_medium, net_small
+            FROM sector_fund_flow
+            WHERE date = (SELECT MAX(date) FROM sector_fund_flow)
+            ORDER BY ABS(net_main) DESC
+        """))
+    except Exception:
+        return []
 
 
 # ─── index_valuation ───────────────────────────────────────────

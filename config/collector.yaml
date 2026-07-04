@@ -89,3 +89,9 @@ tasks:
     enabled: true
     timeout: 120
     retry: 2
+  sync_db:
+    display_name: DB读写同步
+    schedule: "*/2 * * * *"
+    enabled: true
+    timeout: 60
+    retry: 1

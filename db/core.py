@@ -5,7 +5,7 @@ import time
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, 'data')
-DB_PATH = os.path.join(DATA_DIR, 'etf.duckdb')
+DB_PATH = os.environ.get('ETF_DB_PATH') or os.path.join(DATA_DIR, 'etf.duckdb')
 os.makedirs(DATA_DIR, exist_ok=True)
 
 
@@ -13,7 +13,7 @@ def get_conn(read_only=False):
     return duckdb.connect(DB_PATH, read_only=read_only)
 
 
-def query(sql, params=None, max_retries=3, retry_delay=0.5):
+def query(sql, params=None, max_retries=20, retry_delay=1):
     for attempt in range(max_retries):
         conn = None
         try:
@@ -27,9 +27,10 @@ def query(sql, params=None, max_retries=3, retry_delay=0.5):
         except duckdb.IOException as e:
             if conn is not None:
                 conn.close()
-            if 'Could not set lock' in str(e) and attempt < max_retries - 1:
-                time.sleep(retry_delay)
-                continue
+            if 'Could not set lock' in str(e):
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    continue
             raise
         except Exception:
             if conn is not None:

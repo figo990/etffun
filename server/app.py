@@ -19,6 +19,10 @@ def create_app():
     cfg = load_config()
     cache.configure((cfg.get('cache') or {}).get('ttl_seconds', 30))
 
+    # Ensure DB schema exists
+    from db.schema import init_db
+    init_db()
+
     app = Flask(__name__,
                 static_folder=os.path.join(BASE_DIR, 'public'),
                 template_folder=os.path.join(BASE_DIR, 'server', 'templates'))

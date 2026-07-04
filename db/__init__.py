@@ -22,3 +22,4 @@ from .queries import (
     get_all_codes,
 )
 from .schema import init_db
+from .sync import sync_all_tables
