@@ -98,13 +98,13 @@ def get_all_etf():
 def get_prices():
     sql = """
         WITH ranked AS (
-            SELECT code, price, price_change_pct,
+            SELECT code, date, price, price_change_pct,
                 ROW_NUMBER() OVER (PARTITION BY code ORDER BY date DESC) AS rn
             FROM daily_snapshot
             WHERE price IS NOT NULL
         ),
         with_lag AS (
-            SELECT *,
+            SELECT code, price, price_change_pct, rn,
                 LAG(price, 5)  OVER w AS price_5,
                 LAG(price, 21) OVER w AS price_21
             FROM ranked
@@ -302,19 +302,30 @@ def write_task_trigger(task_name, action, params=None):
     """, [task_name, action, params, datetime.now()])
 
 
-def consume_task_triggers():
-    conn = get_conn(read_only=False)
-    try:
-        df = conn.execute("""
-            UPDATE task_trigger SET consumed = TRUE
-            WHERE consumed = FALSE AND created <= NOW()
-            RETURNING id, task_name, action, params
-        """).fetchdf()
-        conn.close()
-        return _to_records(df)
-    except Exception as e:
-        conn.close()
-        raise e
+def consume_task_triggers(max_retries=5, retry_delay=2):
+    import time as _time
+    for attempt in range(max_retries):
+        conn = None
+        try:
+            conn = get_conn(read_only=False)
+            df = conn.execute("""
+                UPDATE task_trigger SET consumed = TRUE
+                WHERE consumed = FALSE AND created <= NOW()
+                RETURNING id, task_name, action, params
+            """).fetchdf()
+            conn.close()
+            return _to_records(df)
+        except duckdb.IOException as e:
+            if conn is not None:
+                conn.close()
+            if attempt < max_retries - 1:
+                _time.sleep(retry_delay)
+                continue
+            raise
+        except Exception:
+            if conn is not None:
+                conn.close()
+            raise
 
 
 def get_task_history(task_name, limit=20):

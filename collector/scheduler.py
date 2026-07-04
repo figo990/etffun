@@ -110,5 +110,5 @@ def trigger_poll_loop(scheduler):
                         scheduler.modify_job(task_name, next_run_time=datetime.now(timezone.utc))
                         print(f"  [trigger] {task_name} scheduled immediately")
         except Exception as e:
-            print(f"  [trigger] poll error: {e}")
+            print(f"  [trigger] poll error: {e}", flush=True)
         time.sleep(10)
