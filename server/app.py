@@ -1,10 +1,12 @@
 import os
+import shutil
 from flask import Flask, send_from_directory
 from flask_cors import CORS
 import yaml
 from .cache import cache
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, 'data')
 CONFIG_PATH = os.path.join(BASE_DIR, 'config', 'server.yaml')
 
 
@@ -15,9 +17,24 @@ def load_config():
         return yaml.safe_load(f) or {}
 
 
+def ensure_read_db():
+    """If primary DB exists but read replica doesn't, copy it."""
+    write_path = os.path.join(DATA_DIR, 'etf.duckdb')
+    read_path = os.path.join(DATA_DIR, 'etf_read.duckdb')
+    if os.path.exists(write_path) and not os.path.exists(read_path):
+        try:
+            shutil.copy2(write_path, read_path)
+            print(f"[app] read replica created from {os.path.basename(write_path)}")
+        except Exception as e:
+            print(f"[app] failed to create read replica: {e}")
+
+
 def create_app():
     cfg = load_config()
     cache.configure((cfg.get('cache') or {}).get('ttl_seconds', 30))
+
+    # Ensure read replica exists
+    ensure_read_db()
 
     # Ensure DB schema exists
     from db.schema import init_db

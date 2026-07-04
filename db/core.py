@@ -11,14 +11,27 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 
 def safe_error(e):
-    """Sanitize error message: strip file paths, keep user-friendly message."""
+    """Return a user-friendly error message without internal details."""
     msg = str(e)
+    if 'Could not set lock' in msg or 'lock' in msg.lower():
+        return '数据库正被采集任务占用，自动重试中，请稍后刷新'
+    if 'Cannot open database' in msg:
+        return '数据库尚未初始化，请先运行数据采集'
+    if 'does not exist' in msg.lower():
+        return '数据表尚未就绪，正在同步数据，请稍后重试'
+    if 'Constraint Error' in msg or 'Duplicate key' in msg:
+        return '数据冲突，请刷新后重试'
+    # Fallback: strip paths and technical noise
     if DATA_DIR and DATA_DIR in msg:
-        msg = msg.replace(DATA_DIR, '<data>')
-    msg = re.sub(r'"[A-Z]:[^"]*"', '<path>', msg)
-    msg = re.sub(r'"/[^"]*"', '<path>', msg)
-    msg = msg.replace('<data><path>', '<data>')
-    return msg[:200]
+        msg = msg.replace(DATA_DIR, '')
+    msg = re.sub(r'"[A-Z]:[^"]*"', '', msg)
+    msg = re.sub(r'"/[^"]*"', '', msg)
+    msg = re.sub(r'[A-Z]:\\(?:[^\\\s]+\\)*', '', msg)
+    msg = re.sub(r'/[\w./-]+', '', msg)
+    msg = re.sub(r'LINE\s+\d+:.*', '', msg)
+    msg = re.sub(r'Did you mean[^?]+\?', '', msg)
+    msg = re.sub(r'\s+', ' ', msg).strip().strip(':;,')
+    return msg[:120] or '服务内部错误'
 
 
 def get_conn(read_only=False):
