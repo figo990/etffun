@@ -515,13 +515,16 @@ function updateFilterBadge() {
   const btn = document.getElementById('filterToggleBtn');
   if (!btn) return;
   const cnt = filterRules.length;
-  btn.textContent = `筛选${cnt ? '('+cnt+')' : ''}`;
+  btn.textContent = `条件选基${cnt ? '('+cnt+')' : ''}`;
   btn.classList.toggle('has-rules', cnt > 0);
 }
 
 function renderFilterPanel() {
   const panel = document.getElementById('filterPanel');
   let html = '';
+
+  // Header bar (mobile)
+  html += '<div class="fp-header"><span class="fp-header-title">条件选基</span><button class="fp-close" id="fpCloseBtn" title="关闭">✕</button></div>';
 
   if (!filterRules.length) {
     html += '<div class="fp-empty">暂无筛选条件，点击下方添加</div>';
@@ -750,6 +753,11 @@ document.addEventListener('click', (e) => {
   }
 });
 document.getElementById('filterPanel').addEventListener('click', (e) => e.stopPropagation());
+document.getElementById('filterPanel').addEventListener('click', (e) => {
+  if (e.target.id === 'fpCloseBtn') {
+    document.getElementById('filterPanel').classList.remove('open');
+  }
+});
 
 document.getElementById('colToggleBtn').addEventListener('click', () => {
   const panel = document.getElementById('colPanel');
