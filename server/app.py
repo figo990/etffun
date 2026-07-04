@@ -6,7 +6,6 @@ import yaml
 from .cache import cache
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(BASE_DIR, 'data')
 CONFIG_PATH = os.path.join(BASE_DIR, 'config', 'server.yaml')
 
 
@@ -19,8 +18,10 @@ def load_config():
 
 def ensure_read_db():
     """If primary DB exists but read replica doesn't, copy it."""
-    write_path = os.path.join(DATA_DIR, 'etf.duckdb')
-    read_path = os.path.join(DATA_DIR, 'etf_read.duckdb')
+    from db.core import DB_PATH as cur_db_path
+    db_dir = os.path.dirname(cur_db_path)
+    write_path = os.path.join(db_dir, 'etf.duckdb')
+    read_path = os.path.join(db_dir, 'etf_read.duckdb')
     if os.path.exists(write_path) and not os.path.exists(read_path):
         try:
             shutil.copy2(write_path, read_path)

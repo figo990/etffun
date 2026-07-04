@@ -1,15 +1,17 @@
 """Test: read replica auto-creation and error sanitization"""
-import os, shutil, sys
+import os, shutil, sys, tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
-main_db = os.path.join(data_dir, 'etf.duckdb')
-read_db = os.path.join(data_dir, 'etf_read.duckdb')
+# Use a temp directory to avoid touching the user's real databases
+test_dir = tempfile.mkdtemp(prefix='etffun_test_')
+orig_db_path = os.environ.get('ETF_DB_PATH', '')
 
-# Ensure clean state
-for f in [main_db, read_db]:
-    if os.path.exists(f):
-        os.remove(f)
+data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
+main_db = os.path.join(test_dir, 'etf.duckdb')
+read_db = os.path.join(test_dir, 'etf_read.duckdb')
+
+# Point to temp dir by setting env var BEFORE importing app
+os.environ['ETF_DB_PATH'] = main_db
 
 # Step 1: Create main DB with real data (simulate production)
 print('=== Step 1: Create main DB with data ===')
@@ -73,6 +75,13 @@ for raw, expected in errors.items():
         print(f'       Expected "{expected}" in output')
 
 # Cleanup
-os.remove(main_db)
-os.remove(read_db)
+if os.path.exists(main_db):
+    os.remove(main_db)
+if os.path.exists(read_db):
+    os.remove(read_db)
+os.rmdir(test_dir)  # remove temp dir
+if orig_db_path:
+    os.environ['ETF_DB_PATH'] = orig_db_path
+else:
+    os.environ.pop('ETF_DB_PATH', None)
 print('\n=== All tests passed ===')
