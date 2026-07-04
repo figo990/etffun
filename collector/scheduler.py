@@ -20,7 +20,7 @@ from .tasks.sector_fund_flow import SectorFundFlowTask
 from .tasks.index_valuation import IndexValuationTask
 from .tasks.bond_yield import BondYieldTask
 from .tasks.margin_detail import MarginDetailTask
-from .tasks.backfill_prices import BackfillPricesTask
+from .tasks.sync_db import SyncDbTask
 from db import init_task_status, write_task_trigger, consume_task_triggers, init_db
 
 TASK_CLASSES = {
@@ -39,7 +39,7 @@ TASK_CLASSES = {
     'index_valuation': IndexValuationTask,
     'bond_yield': BondYieldTask,
     'margin_detail': MarginDetailTask,
-    'backfill_prices': BackfillPricesTask,
+    'sync_db': SyncDbTask,
 }
 
 

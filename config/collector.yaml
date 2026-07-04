@@ -89,9 +89,9 @@ tasks:
     enabled: true
     timeout: 120
     retry: 2
-  backfill_prices:
-    display_name: 历史价格回填
-    schedule: "0 10 * * 0"
+  sync_db:
+    display_name: DB读写同步
+    schedule: "*/2 * * * *"
     enabled: true
-    timeout: 600
+    timeout: 60
     retry: 1
