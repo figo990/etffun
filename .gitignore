@@ -2,6 +2,8 @@ data/
 __pycache__/
 *.pyc
 *.pyo
+*.bak
+_*.py
 .env
 venv/
 .venv/
@@ -9,3 +11,6 @@ deploy/
 .playwright-cli/
 *.png
 start.bat
+server.log
+server.err
+docs/

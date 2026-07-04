@@ -4,249 +4,45 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>全市场ETF份额监控</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box;font-family:"Microsoft YaHei","Segoe UI",sans-serif}
-body{background:#12121a;color:#e0e0e5;min-height:100vh}
-.header{background:#1a1a2e;border-bottom:1px solid #2a2a4a;padding:14px 24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
-.header h1{font-size:20px;font-weight:700;color:#e0e0e5;letter-spacing:1px}
-.header h1 span{color:#6f9eff}
-.controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-.search-box{background:#1e1e2f;border:1px solid #2a2a4a;color:#e0e0e5;padding:7px 14px;border-radius:6px;font-size:14px;width:220px;outline:none}
-.search-box:focus{border-color:#6f9eff}
-.search-box::placeholder{color:#5a5a7a}
-#exchangeFilter,#extraFilter{background:#1e1e2f;border:1px solid #2a2a4a;color:#e0e0e5;padding:7px 8px;border-radius:6px;font-size:14px;cursor:pointer}
-.stats-bar{background:#1a1a2e;padding:9px 24px;border-bottom:1px solid #2a2a4a;display:flex;gap:28px;font-size:14px;flex-wrap:wrap}
-.stats-bar .stat{color:#8c909a}
-.stats-bar .stat b{color:#e0e0e5;font-weight:600}
-.stats-bar .stat .pos{color:#ff7b72}
-.stats-bar .stat .neg{color:#6fcf97}
-.table-wrap{overflow-x:auto;margin:10px;border:1px solid #2a2a4a;border-radius:8px;background:#1a1a2e}
-table{width:100%;border-collapse:collapse;font-size:14px;min-width:1600px}
-th{text-align:left;padding:10px 7px;background:#1e1e2f;color:#8c909a;font-weight:500;position:sticky;top:0;border-bottom:1px solid #2a2a4a;white-space:nowrap;user-select:none}
-th.srt{cursor:pointer}
-th.srt:hover{background:#2a2a4a}
-th.srt::after{content:" ⇅";font-size:9px;opacity:0.4}
-th.asc::after{content:" ▲";opacity:1;color:#6f9eff}
-th.desc::after{content:" ▼";opacity:1;color:#6f9eff}
-td{padding:8px 7px;border-bottom:1px solid #1e1e2e;color:#e0e0e5}
-tr:hover td{background:#1e1e30}
-.code{font-family:monospace;color:#8c909a;font-size:13px}
-.name{font-weight:500;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.badge-sse{display:inline-block;background:#1a3a5c;color:#6f9eff;padding:1px 7px;border-radius:3px;font-size:12px}
-.badge-szse{display:inline-block;background:#1a3a2c;color:#6fcf97;padding:1px 7px;border-radius:3px;font-size:12px}
-.num{font-family:monospace;text-align:right}
-.pos{color:#ff7b72}
-.neg{color:#6fcf97}
-.na{color:#5a5a7a;font-size:12px}
-.sep{font-size:11px;color:#3a3a5a;text-align:center;padding:0 2px}
-.loading{text-align:center;padding:60px;color:#5a5a7a;font-size:16px}
-.loading::after{content:"";display:block;width:32px;height:32px;border:3px solid #2a2a4a;border-top-color:#6f9eff;border-radius:50%;margin:16px auto;animation:spin .8s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.error{text-align:center;padding:40px;color:#ff7b72}
-.footer{padding:10px 24px;text-align:right;font-size:12px;color:#5a5a7a;border-top:1px solid #2a2a4a;margin-top:10px}
-.footer a{color:#6f9eff;text-decoration:none}
-.btn{background:transparent;border:1px solid #2a2a4a;color:#e0e0e5;padding:6px 16px;border-radius:6px;font-size:14px;cursor:pointer;transition:.1s}
-.btn:hover{background:#2a2a4a;border-color:#6f9eff}
-.btn-group{display:flex;gap:4px}
-.btn-filter{background:transparent;border:1px solid #2a2a4a;color:#8c909a;padding:6px 12px;font-size:13px;cursor:pointer;transition:.1s}
-.btn-filter:first-child{border-radius:6px 0 0 6px}
-.btn-filter:last-child{border-radius:0 6px 6px 0}
-.btn-filter:only-child{border-radius:6px}
-.btn-filter:hover{background:#2a2a4a;color:#e0e0e5}
-.btn-filter.active{background:#1a3355;border-color:#6f9eff;color:#6f9eff}
-.tooltip{position:relative;cursor:help;border-bottom:1px dotted #5a5a7a}
-.tooltip:hover::after{content:attr(data-tip);position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:#1a1a2e;border:1px solid #2a2a4a;padding:5px 9px;border-radius:4px;font-size:12px;white-space:nowrap;z-index:10;color:#e0e0e5}
-@media(max-width:700px){.search-box{width:150px}.header h1{font-size:17px}}
-</style>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%2300b894'/%3E%3Ctext x='16' y='22' text-anchor='middle' fill='%23fff' font-family='Arial' font-weight='700' font-size='16'%3EE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-<div class="header">
-  <h1><span>全市场ETF</span> 份额监控</h1>
-  <div class="controls">
-    <input class="search-box" id="searchInput" placeholder="搜索代码/名称..." autocomplete="off">
-    <select id="exchangeFilter"><option value="">全部交易所</option><option value="沪">沪市</option><option value="深">深市</option></select>
-    <div class="btn-group" id="filterGroup">
-      <button class="btn-filter active" data-filter="hj">仅汇金持仓</button>
-      <button class="btn-filter" data-filter="change">仅份额异动</button>
-      <button class="btn-filter" data-filter="">全部ETF</button>
+<header class="header">
+  <div class="topbar">
+    <a class="brand" href="/">
+      <span class="brand-mark">ETF</span>
+      <span class="brand-main">全市场ETF</span>
+      <span class="brand-sub">份额监控</span>
+    </a>
+    <div class="top-actions">
+      <input class="search-box" id="searchInput" placeholder="搜索代码 / 名称" autocomplete="off">
+      <button class="btn" id="refreshBtn">刷新</button>
+      <span class="col-wrap"><button class="btn" id="colToggleBtn">列显隐</button><div id="colPanel" class="col-panel"></div></span>
+      <span class="fp-wrap"><button class="btn" id="filterToggleBtn">筛选</button><div id="filterPanel" class="filter-panel"></div></span>
+      <span class="update-time" id="updateTime"></span>
     </div>
-    <button class="btn" id="refreshBtn">刷新</button>
-    <span style="font-size:13px;color:#5a5a7a" id="updateTime"></span>
   </div>
+</header>
+<div class="filter-strip">
+  <div class="filter-title">指数ETF</div>
+  <label class="filter-field">交易所
+    <select id="exchangeFilter"><option value="">全部</option><option value="沪">沪市</option><option value="深">深市</option></select>
+  </label>
+  <div class="stats-bar" id="statsBar"></div>
+  <span class="stat" id="northboundInfo" style="white-space:nowrap"></span>
 </div>
-<div class="stats-bar" id="statsBar"></div>
-<div class="table-wrap"><table>
-  <thead><tr>
-    <th class="srt" data-key="交易所">所</th>
-    <th class="srt" data-key="代码">代码</th>
-    <th class="srt" data-key="名称">名称</th>
-    <th class="srt" data-key="日期">日期</th>
-    <th class="srt" data-key="总份额_亿">总份额(亿)</th>
-    <th class="srt" data-key="份额日改变"><span class="tooltip" data-tip="万份/减前一交易日">日改变(万)</span></th>
-    <th class="srt" data-key="份额日改变比例">日改变%</th>
-    <th class="srt" data-key="份额周改变"><span class="tooltip" data-tip="万份/减约5日前">周改变(万)</span></th>
-    <th class="srt" data-key="份额周改变比例">周改变%</th>
-    <th class="srt" data-key="份额月改变"><span class="tooltip" data-tip="万份/减约20日前">月改变(万)</span></th>
-    <th class="srt" data-key="份额月改变比例">月改变%</th>
-    <th class="srt" data-key="最新价">最新价</th>
-    <th class="srt" data-key="涨跌幅">日涨跌</th>
-    <th class="srt" data-key="周涨跌幅">周涨跌</th>
-    <th class="srt" data-key="月涨跌幅">月涨跌</th>
-    <th class="srt" data-key="比汇金改变比"><span class="tooltip" data-tip="当日份额改变额÷汇金持股数(数据来源:2025年报)">比汇金</span></th>
-  </tr></thead>
-  <tbody id="tbody"><tr><td colspan="16" class="loading">加载数据中...</td></tr></tbody>
-  <div style="display:none" id="loadingState"></div>
-</table></div>
+<main class="table-section">
+  <div class="table-wrap"><table>
+    <thead id="table-head"></thead>
+    <tbody id="tbody"><tr><td colspan="31" class="loading">加载数据中...</td></tr></tbody>
+  </table></div>
+</main>
 <div class="footer">
-  份额数据:上交所/深交所 via akshare | 行情:东方财富 | 汇金持仓:2025年报(待更新至2026年中报) | 周/月份额改变需运行数日累积
+  份额:上交所/深交所 | 行情+IOPV:东方财富 | 指数:新浪 | 净值:同花顺 | 北向:东方财富 | 期权:东方财富 | 持仓/机构:天天基金 | 汇金:2025年报
   | <a href="https://fund.eastmoney.com/" target="_blank">天天基金</a>
+  <a href="/admin.html" style="color:#a0aec0;text-decoration:none" aria-label="admin">&middot;</a>
 </div>
-<script>
-let allData = [];
-let sortKey = null, sortAsc = true;
-
-function _na(){return '<span class="na">--</span>'}
-function fmt(v, d){if(v===null||v===undefined)return _na();const s=v.toFixed(d);return s}
-function fmtChg(v){
-  if(v===null||v===undefined)return _na();
-  if(v===0)return '<span class="na">0</span>';
-  const cls=v>0?'pos':'neg';
-  return `<span class="${cls}">${v>0?'+':''}${v.toFixed(1)}</span>`;
-}
-function fmtPct(v){
-  if(v===null||v===undefined)return _na();
-  const cls=v>=0?'pos':'neg';
-  return `<span class="${cls}">${v>=0?'+':''}${v.toFixed(2)}%</span>`;
-}
-function fmtPct1(v){
-  if(v===null||v===undefined)return _na();
-  const cls=v>=0?'pos':'neg';
-  return `<span class="${cls}">${v>=0?'+':''}${v.toFixed(2)}%</span>`;
-}
-function fmtPrice(v){
-  if(v===null||v===undefined)return _na();
-  return v.toFixed(3);
-}
-function fmtHj(v){
-  if(v===null||v===undefined)return _na();
-  if(v===0)return '<span class="na">0</span>';
-  const cls=v>0?'pos':'neg';
-  return `<span class="${cls}">${v>0?'+':''}${v.toFixed(3)}%</span>`;
-}
-
-function render(data){
-  if(data)allData=data;
-  const q=(document.getElementById('searchInput').value||'').trim().toLowerCase();
-  const exch=document.getElementById('exchangeFilter').value;
-  const ext=document.querySelector('#filterGroup .active')?.dataset?.filter||'hj';
-  let f=allData;
-  if(q)f=f.filter(d=>d.代码.includes(q)||d.名称.includes(q));
-  if(exch)f=f.filter(d=>d.交易所===exch);
-  if(ext==='hj')f=f.filter(d=>d.汇金持股_亿!==null&&d.汇金持股_亿!==undefined);
-  if(ext==='change')f=f.filter(d=>d.份额日改变!==null&&Math.abs(d.份额日改变)>0);
-
-  if(sortKey){
-    f=[...f].sort((a,b)=>{
-      let va=a[sortKey],vb=b[sortKey];
-      if(va===null||va===undefined)va=-Infinity;
-      if(vb===null||vb===undefined)vb=-Infinity;
-      if(typeof va==='string')return sortAsc?va.localeCompare(vb):vb.localeCompare(va);
-      return sortAsc?va-vb:vb-va;
-    });
-  }
-
-  const total=f.length;
-  const wc=f.filter(d=>d.份额日改变!==null);
-  const pos=wc.filter(d=>d.份额日改变>0).length;
-  const neg=wc.filter(d=>d.份额日改变<0).length;
-  const net=wc.reduce((s,d)=>s+(d.份额日改变||0),0);
-  const hjCnt=f.filter(d=>d.汇金持股_亿!==null).length;
-  document.getElementById('statsBar').innerHTML=`
-    <span class="stat">显示 <b>${total}</b> 只ETF</span>
-    <span class="stat"><span class="pos">⬆ ${pos}</span> / <span class="neg">⬇ ${neg}</span></span>
-    <span class="stat">净份额变动: <b class="${net>=0?'pos':'neg'}">${net>=0?'+':''}${(net/1e4).toFixed(2)}</b>亿</span>
-    <span class="stat">汇金可见: <b>${hjCnt}</b> 只</span>
-  `;
-
-  if(!f.length){
-    document.getElementById('tbody').innerHTML='<tr><td colspan="16" style="text-align:center;padding:40px;color:#5a5a7a">无匹配数据</td></tr>';
-    return;
-  }
-
-  let html='';
-  f.forEach(d=>{
-    const badge=d.交易所==='沪'?'badge-sse':'badge-szse';
-    const hjMark=d.汇金持股_亿!==null?`<span style="font-size:11px;color:#6f9eff;cursor:help" title="汇金持仓${d.汇金持股_亿}亿">◆</span>`:'';
-    html+=`<tr>
-      <td><span class="${badge}">${d.交易所}</span></td>
-      <td class="code">${d.代码}</td>
-      <td class="name">${d.名称} ${hjMark}</td>
-      <td style="color:#8c909a;font-size:12px">${d.日期}</td>
-      <td class="num">${fmt(d.总份额_亿,2)}</td>
-      <td class="num">${fmtChg(d.份额日改变)}</td>
-      <td class="num" style="font-size:12px">${fmtPct(d.份额日改变比例)}</td>
-      <td class="num">${fmtChg(d.份额周改变)}</td>
-      <td class="num" style="font-size:12px">${fmtPct(d.份额周改变比例)}</td>
-      <td class="num">${fmtChg(d.份额月改变)}</td>
-      <td class="num" style="font-size:12px">${fmtPct(d.份额月改变比例)}</td>
-      <td class="num">${fmtPrice(d.最新价)}</td>
-      <td class="num">${fmtPct1(d.涨跌幅)}</td>
-      <td class="num">${fmtPct1(d.周涨跌幅)}</td>
-      <td class="num">${fmtPct1(d.月涨跌幅)}</td>
-      <td class="num">${fmtHj(d.比汇金改变比)}</td>
-    </tr>`;
-  });
-  document.getElementById('tbody').innerHTML=html;
-  document.getElementById('updateTime').textContent=`更新: ${new Date().toLocaleString()}`;
-}
-
-let loadTimer;
-async function loadData(){
-  document.getElementById('tbody').innerHTML='<tr><td colspan="16" class="loading">加载份额数据...</td></tr>';
-  try{
-    const r=await fetch('/api/etf/all');
-    const d=await r.json();
-    allData=d;
-    render(allData);
-    // lazy load prices in background
-    fetch('/api/etf/prices').then(r=>r.json()).then(prices=>{
-      let updated=0;
-      for(const item of allData){
-        const p=prices[item.代码];
-        if(!p)continue;
-        if(p.最新价!==undefined&&p.最新价!==item.最新价){item.最新价=p.最新价;item.涨跌幅=p.涨跌幅;item.周涨跌幅=p.周涨跌幅;item.月涨跌幅=p.月涨跌幅;updated++;}
-      }
-      if(updated)render(allData);
-    }).catch(()=>{});
-  }catch(e){
-    document.getElementById('tbody').innerHTML=`<tr><td colspan="16" class="error">加载失败: ${e.message}</td></tr>`;
-  }
-}
-
-let searchTimer;
-document.getElementById('searchInput').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>render(),150);});
-document.getElementById('exchangeFilter').addEventListener('change',()=>render());
-document.getElementById('filterGroup').addEventListener('click',e=>{
-  const btn=e.target.closest('.btn-filter');
-  if(!btn)return;
-  document.querySelectorAll('#filterGroup .btn-filter').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  render();
-});
-document.getElementById('refreshBtn').addEventListener('click',loadData);
-document.querySelectorAll('th.srt').forEach(th=>{
-  th.addEventListener('click',()=>{
-    const key=th.dataset.key;
-    if(sortKey===key)sortAsc=!sortAsc;
-    else{sortKey=key;sortAsc=true;}
-    document.querySelectorAll('th.srt').forEach(t=>t.classList.remove('asc','desc'));
-    th.classList.add(sortAsc?'asc':'desc');
-    render();
-  });
-});
-
-loadData();
-setInterval(loadData,300000);
-</script>
+<script src="/js/app.js"></script>
 </body>
 </html>

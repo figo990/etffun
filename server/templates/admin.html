@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>采集任务管理</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%2300b894'/%3E%3Ctext x='16' y='22' text-anchor='middle' fill='%23fff' font-family='Arial' font-weight='700' font-size='16'%3EE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  .admin-body{padding:0}
+  .admin-header{height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:#1a202c}
+  .admin-header .brand-main{font-size:16px}
+  .admin-content{padding:10px}
+  .admin-table{width:100%;border:1px solid #cbd5e0;background:#fff;border-collapse:collapse;font-family:Arial,"Microsoft YaHei",sans-serif;font-size:13px}
+  .admin-table th{text-align:left;padding:6px 8px;background:#e2e8f0;color:#2d3436;border:1px solid #e2e8f0;font-weight:400;white-space:nowrap}
+  .admin-table td{padding:6px 8px;border:1px solid #e2e8f0;height:31px}
+  .admin-table tbody tr:nth-child(even) td{background:#f7fafc}
+  .admin-table tr:hover td{background:#fff6e5}
+  .admin-msg{color:#16833a;margin:8px 0;padding:8px;background:#eaf6ee;border:1px solid #b9dec4;border-radius:2px;display:none}
+  .admin-footer{margin-top:12px;padding:8px 0;font-size:12px;color:#a0aec0;text-align:right}
+  .admin-footer a{color:#00b894}
+  .login-mask{position:fixed;inset:0;background:rgba(26,32,44,.85);display:flex;align-items:center;justify-content:center;z-index:999}
+  .login-box{background:#fff;border-radius:6px;padding:32px 28px;width:320px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,.3)}
+  .login-box h2{font-size:16px;color:#2d3436;margin-bottom:16px;text-align:center}
+  .login-box input{width:100%;height:36px;border:1px solid #cbd5e0;border-radius:3px;padding:0 12px;font-size:14px;outline:none;margin-bottom:12px}
+  .login-box input:focus{border-color:#00b894;box-shadow:0 0 0 2px rgba(0,184,148,.2)}
+  .login-box button{width:100%;height:36px;background:#00b894;color:#fff;border:none;border-radius:3px;font-size:14px;cursor:pointer}
+  .login-box button:hover{background:#00a884}
+  .login-box .login-err{color:#d94b45;font-size:12px;margin-bottom:8px;display:none}
+  .toggle-btn{width:36px;height:20px;border-radius:10px;border:none;cursor:pointer;position:relative;transition:background .2s}
+  .toggle-btn.on{background:#00b894}
+  .toggle-btn.off{background:#cbd5e0}
+  .toggle-btn::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .2s}
+  .toggle-btn.on::after{transform:translateX(16px)}
+  .history-panel{display:none;margin-top:12px;border:1px solid #cbd5e0;border-radius:4px;background:#f7fafc;padding:10px}
+  .history-panel.open{display:block}
+  .history-panel h4{font-size:13px;color:#2d3436;margin-bottom:8px}
+  .history-list{font-size:12px;color:#555}
+  .history-list .h-row{display:flex;gap:12px;padding:3px 0;border-bottom:1px solid #e2e8f0}
+  .history-list .h-row:last-child{border-bottom:none}
+  @media(max-width:900px){
+    .admin-header{padding:0 10px}
+    .admin-content{padding:6px}
+    .admin-table{font-size:12px}
+    .admin-table th,.admin-table td{padding:4px 6px}
+    .login-box{padding:24px 20px}
+  }
+</style>
+</head>
+<body class="admin-body">
+<div id="loginMask" class="login-mask">
+  <div class="login-box">
+    <h2>采集任务管理</h2>
+    <p class="login-err" id="loginErr">密码错误</p>
+    <input type="password" id="pwdInput" placeholder="请输入管理密码" autocomplete="off">
+    <button id="loginBtn">进入管理</button>
+  </div>
+</div>
+<div id="mainContent" style="display:none">
+<div class="admin-header">
+  <a class="brand" href="/"><span class="brand-mark">ETF</span><span class="brand-main">采集任务管理</span></a>
+  <div style="display:flex;align-items:center;gap:12px">
+    <span class="update-time" id="updateTime"></span>
+    <button class="btn-sm" id="logoutBtn" style="color:#e53e3e;border-color:#e53e3e">退出</button>
+  </div>
+</div>
+<div class="admin-content">
+  <div id="msg" class="admin-msg"></div>
+  <div style="overflow-x:auto">
+  <table class="admin-table">
+    <thead><tr>
+      <th>任务名称</th>
+      <th>调度</th>
+      <th>启用</th>
+      <th>状态</th>
+      <th>上次运行</th>
+      <th>耗时</th>
+      <th>错误信息</th>
+      <th>操作</th>
+    </tr></thead>
+    <tbody id="tbody"><tr><td colspan="8" class="loading">加载中...</td></tr></tbody>
+  </table>
+  </div>
+  <div id="historyPanel" class="history-panel">
+    <h4 id="historyTitle">运行历史</h4>
+    <div class="history-list" id="historyList"></div>
+  </div>
+  <div class="admin-footer">
+    <p>状态自动刷新: 每10秒 | <a href="/">返回主页</a></p>
+  </div>
+</div>
+</div>
+<script>
+let _token = '';
+
+function getToken(){ return _token || sessionStorage.getItem('admin_token') || ''; }
+function setToken(t){ _token = t; sessionStorage.setItem('admin_token', t); }
+
+function authHeaders(){ return {'X-Admin-Token': getToken()}; }
+
+document.getElementById('loginBtn').addEventListener('click', doLogin);
+document.getElementById('pwdInput').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+
+async function doLogin(){
+  const pwd = document.getElementById('pwdInput').value.trim();
+  if(!pwd) return;
+  try{
+    const r = await fetch('/api/admin/auth', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:pwd})});
+    const d = await r.json();
+    if(d.ok){
+      setToken(pwd);
+      document.getElementById('loginMask').style.display='none';
+      document.getElementById('mainContent').style.display='block';
+      loadTasks();
+    } else {
+      document.getElementById('loginErr').style.display='block';
+    }
+  }catch(e){
+    document.getElementById('loginErr').textContent='连接失败';
+    document.getElementById('loginErr').style.display='block';
+  }
+}
+
+document.getElementById('logoutBtn').addEventListener('click', ()=>{
+  sessionStorage.removeItem('admin_token');
+  _token='';
+  document.getElementById('mainContent').style.display='none';
+  document.getElementById('loginMask').style.display='flex';
+  document.getElementById('pwdInput').value='';
+  document.getElementById('loginErr').style.display='none';
+});
+
+if(getToken()){
+  document.getElementById('loginMask').style.display='none';
+  document.getElementById('mainContent').style.display='block';
+  loadTasks();
+}
+
+async function loadTasks(){
+  try{
+    const r=await fetch('/api/admin/tasks?force=1', {headers:authHeaders()});
+    if(r.status===401){
+      sessionStorage.removeItem('admin_token');
+      document.getElementById('mainContent').style.display='none';
+      document.getElementById('loginMask').style.display='flex';
+      return;
+    }
+    const tasks=await r.json();
+    const tbody=document.getElementById('tbody');
+    if(!tasks.length){
+      tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:30px;color:#5a5a7a">暂无任务</td></tr>';
+      return;
+    }
+    let html='';
+    for(const t of tasks){
+      const status=t.last_status||'pending';
+      const cls=status==='success'?'badge-szse':status==='failed'?'badge-sse':status==='running'?'badge-running':'badge-pending';
+      const time=t.last_run_at?new Date(t.last_run_at).toLocaleString():'--';
+      const dur=t.last_duration?t.last_duration.toFixed(1)+'s':'--';
+      const enabled = t.enabled !== false;
+      html+=`<tr>
+        <td><b>${t.display_name||t.task_name}</b><br><span style="font-size:11px;color:#8c909a">${t.task_name}</span></td>
+        <td style="color:#8c909a;font-family:monospace;white-space:nowrap">${t.schedule_cron||'--'}</td>
+        <td><button class="toggle-btn ${enabled?'on':'off'}" onclick="toggleTask(event,'${t.task_name}')" title="${enabled?'点击禁用':'点击启用'}"></button></td>
+        <td><span class="${cls}">${status}</span></td>
+        <td style="font-size:13px;color:#8c909a;white-space:nowrap">${time}</td>
+        <td style="font-family:monospace">${dur}</td>
+        <td style="font-size:12px;color:#ff7b72;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${t.last_error||''}">${t.last_error||''}</td>
+        <td style="white-space:nowrap">
+          <button class="btn-sm" onclick="runTask(event,'${t.task_name}')" ${enabled?'':'disabled'}>▶ 执行</button>
+          <button class="btn-sm" onclick="showHistory('${t.task_name}','${t.display_name||t.task_name}')" style="margin-left:4px">📋</button>
+        </td>
+      </tr>`;
+    }
+    tbody.innerHTML=html;
+    document.getElementById('updateTime').textContent='更新: '+new Date().toLocaleString();
+  }catch(e){
+    document.getElementById('tbody').innerHTML='<tr><td colspan="8" class="error">加载失败: '+e.message+'</td></tr>';
+  }
+}
+
+async function runTask(event,name){
+  const btn=event.target;
+  btn.disabled=true;
+  btn.textContent='执行中...';
+  try{
+    const r=await fetch('/api/admin/tasks/'+name+'/run',{method:'POST',headers:authHeaders()});
+    const d=await r.json();
+    const msg=document.getElementById('msg');
+    msg.textContent=d.message||'已触发';
+    msg.style.display='block';
+    setTimeout(()=>msg.style.display='none',3000);
+    setTimeout(loadTasks,2000);
+  }catch(e){
+    alert('触发失败: '+e.message);
+  }
+  btn.disabled=false;
+  btn.textContent='▶ 执行';
+}
+
+async function toggleTask(event,name){
+  const btn=event.target;
+  btn.disabled=true;
+  try{
+    const r=await fetch('/api/admin/tasks/'+name+'/toggle',{method:'POST',headers:authHeaders()});
+    const d=await r.json();
+    if(d.ok){
+      loadTasks();
+    }
+  }catch(e){
+    alert('操作失败: '+e.message);
+  }
+  btn.disabled=false;
+}
+
+async function showHistory(name, displayName){
+  const panel=document.getElementById('historyPanel');
+  const list=document.getElementById('historyList');
+  document.getElementById('historyTitle').textContent=displayName+' - 运行历史';
+  panel.classList.add('open');
+  list.innerHTML='<span style="color:#a0aec0">加载中...</span>';
+  try{
+    const r=await fetch('/api/admin/tasks/'+name+'/history?limit=10',{headers:authHeaders()});
+    const data=await r.json();
+    if(!data.length){
+      list.innerHTML='<span style="color:#a0aec0">暂无历史记录</span>';
+      return;
+    }
+    let html='';
+    for(const h of data){
+      const t=h.last_run_at?new Date(h.last_run_at).toLocaleString():'--';
+      const s=h.last_status||'--';
+      const d=h.last_duration?h.last_duration.toFixed(1)+'s':'--';
+      const clr=s==='success'?'#16833a':s==='failed'?'#d94b45':'#8c909a';
+      html+=`<div class="h-row"><span>${t}</span><span style="color:${clr};font-weight:600">${s}</span><span>${d}</span><span style="color:#ff7b72;max-width:300px;overflow:hidden;text-overflow:ellipsis">${h.last_error||''}</span></div>`;
+    }
+    list.innerHTML=html;
+  }catch(e){
+    list.innerHTML='<span style="color:#d94b45">加载失败</span>';
+  }
+}
+
+setInterval(()=>{ if(getToken()) loadTasks(); }, 10000);
+</script>
+</body>
+</html>

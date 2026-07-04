@@ -1,0 +1,61 @@
+tasks:
+  shares_sse:
+    display_name: 上交所ETF份额
+    schedule: "0 17 * * 1-5"
+    enabled: true
+    timeout: 120
+    retry: 3
+  shares_szse:
+    display_name: 深交所ETF份额
+    schedule: "0 17 * * 1-5"
+    enabled: true
+    timeout: 120
+    retry: 3
+  spot:
+    display_name: 实时行情
+    schedule: "*/10 9:30-15:00 * * 1-5"
+    enabled: true
+    timeout: 60
+    retry: 2
+  nav:
+    display_name: 净值数据
+    schedule: "30 19 * * 1-5"
+    enabled: true
+    timeout: 300
+    retry: 3
+  index_spot:
+    display_name: 指数实时行情
+    schedule: "*/10 9:30-15:00 * * 1-5"
+    enabled: true
+    timeout: 30
+    retry: 2
+  index_mapping:
+    display_name: ETF指数映射
+    schedule: "0 10 * * 1"
+    enabled: true
+    timeout: 600
+    retry: 2
+  fund_holding:
+    display_name: ETF持仓数据
+    schedule: "0 20 * * 6"
+    enabled: true
+    timeout: 600
+    retry: 2
+  northbound:
+    display_name: 北向资金流
+    schedule: "0 18 * * 1-5"
+    enabled: true
+    timeout: 120
+    retry: 3
+  etf_option:
+    display_name: ETF期权数据
+    schedule: "30 15 * * 1-5"
+    enabled: true
+    timeout: 120
+    retry: 2
+  inst_hold:
+    display_name: 机构持仓比例
+    schedule: "0 21 1 * *"
+    enabled: false
+    timeout: 900
+    retry: 2
