@@ -12,6 +12,7 @@ class NorthboundTask(BaseTask):
     def _execute(self):
         records = []
 
+        # Primary: EM historical API
         try:
             df = ak.stock_hsgt_hist_em(symbol='北向资金')
             if df is not None and not df.empty:
@@ -52,6 +53,22 @@ class NorthboundTask(BaseTask):
                     records.append((d, sh, sz, sh + sz, None, None, None, None))
             except Exception as e:
                 print(f"[northbound] 分渠道获取失败: {e}")
+
+        # Fallback: summary API (current day only, non-EM)
+        if not records:
+            try:
+                df = ak.stock_hsgt_fund_flow_summary_em()
+                if df is not None and not df.empty:
+                    north = df[df['资金方向'] == '北向']
+                    dates = north['交易日'].unique()
+                    for d in dates:
+                        day_rows = north[north['交易日'] == d]
+                        date_str = pd.Timestamp(d).strftime('%Y-%m-%d')
+                        sh_val = float(day_rows[day_rows['板块'] == '沪股通']['成交净买额'].iloc[0]) if not day_rows[day_rows['板块'] == '沪股通'].empty else 0
+                        sz_val = float(day_rows[day_rows['板块'] == '深股通']['成交净买额'].iloc[0]) if not day_rows[day_rows['板块'] == '深股通'].empty else 0
+                        records.append((date_str, sh_val, sz_val, sh_val + sz_val, None, None, None, None))
+            except Exception as e:
+                print(f"[northbound] 摘要获取失败: {e}")
 
         if records:
             upsert_northbound_flow(records)

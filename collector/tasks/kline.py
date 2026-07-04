@@ -6,34 +6,43 @@ from db import upsert_kline, get_all_codes, query
 from ..task_base import BaseTask
 
 
-def _fetch_single(code, start_short, end_short, timeout=20):
+def _code_to_prefix(code):
+    return 'sh' if code[0] in ('5', '6') else 'sz'
+
+
+def _fetch_single_sina(code, start_date_str, end_date_str, timeout=20):
+    prefix = _code_to_prefix(code)
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-            future = ex.submit(ak.fund_etf_hist_em, symbol=code, period='daily',
-                               start_date=start_short, end_date=end_short, adjust='')
+            future = ex.submit(ak.fund_etf_hist_sina, symbol=prefix + code)
             df = future.result(timeout=timeout)
             if df is None or df.empty:
                 return code, None
+            df = df.sort_values('date')
+            df['date'] = pd.to_datetime(df['date'])
+            start_dt = pd.Timestamp(start_date_str)
+            end_dt = pd.Timestamp(end_date_str)
+            df = df[(df['date'] >= start_dt) & (df['date'] <= end_dt)]
+            if df.empty:
+                return code, []
+            df['prev_close'] = df['close'].shift(1)
             rows = []
             for _, row in df.iterrows():
-                try:
-                    d = row['日期']
-                    if isinstance(d, pd.Timestamp):
-                        d = d.strftime('%Y-%m-%d')
-                    else:
-                        d = str(d)[:10]
-                except Exception:
-                    continue
+                d = row['date'].strftime('%Y-%m-%d')
+                amp = None
+                pc = row.get('prev_close')
+                if pc is not None and pc > 0:
+                    amp = round((float(row['high']) - float(row['low'])) / pc * 100, 2)
                 rows.append((
                     d, code,
-                    float(row.get('开盘', 0) or 0),
-                    float(row.get('最高', 0) or 0),
-                    float(row.get('最低', 0) or 0),
-                    float(row.get('收盘', 0) or 0),
-                    float(row.get('成交量', 0) or 0),
-                    float(row.get('成交额', 0) or 0),
-                    float(row.get('振幅', 0) or 0),
-                    float(row.get('换手率', 0) or 0) if pd.notna(row.get('换手率')) else None,
+                    float(row['open']),
+                    float(row['high']),
+                    float(row['low']),
+                    float(row['close']),
+                    int(row['volume']),
+                    int(row['amount']),
+                    amp,
+                    None,
                 ))
             return code, rows
     except concurrent.futures.TimeoutError:
@@ -62,16 +71,13 @@ class KlineTask(BaseTask):
             start = datetime.strptime(md_str, '%Y-%m-%d') - timedelta(days=1)
             start_date = start.strftime('%Y-%m-%d')
 
-        start_short = start_date.replace('-', '')
-        today_short = today.replace('-', '')
-
         codes = get_all_codes()
         total = 0
         errors = 0
         for i, code in enumerate(codes):
             if len(code) != 6:
                 continue
-            _, rows = _fetch_single(code, start_short, today_short)
+            _, rows = _fetch_single_sina(code, start_date, today)
             if rows:
                 upsert_kline(rows)
                 total += len(rows)
