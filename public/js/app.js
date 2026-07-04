@@ -212,6 +212,7 @@ const PRESET_CATEGORIES = [
   {label:'🏆 质量分层', keys:['核心配置池','优选候选池','初筛候选池']},
   {label:'📊 大类聚焦', keys:['宽基风格精选','行业ETF候选','债券ETF候选','跨境ETF候选']},
   {label:'⚡ 信号监测', keys:['折价博弈(<-1.5%)','溢价预警(>1.5%)','资金持续流入','大额赎回预警','放量下跌异动','规模激增异动','汇金动态调仓']},
+  {label:'📈 资金/估值', keys:['量价背离','恐慌抄底','杠杆看多','国家队增仓','估值低位','估值高位']},
 ];
 
 const FILTER_PRESETS = {
@@ -345,6 +346,31 @@ const FILTER_PRESETS = {
     {logic:'AND', field:'份额周改变', op:'>=', value:'5000'},
     {logic:'AND', field:'规模_亿', op:'>=', value:'5'},
     {logic:'AND', field:'成交额_万', op:'>', value:'0'}
+  ],
+  '量价背离': [
+    {logic:'AND', field:'份额周改变', op:'>', value:'0'},
+    {logic:'AND', field:'周涨跌幅', op:'<', value:'-3'},
+    {logic:'AND', field:'成交额_万', op:'>=', value:'5000'}
+  ],
+  '恐慌抄底': [
+    {logic:'AND', field:'PCR成交量比', op:'>', value:'1.2'},
+    {logic:'AND', field:'份额日改变', op:'>', value:'0'},
+    {logic:'AND', field:'涨跌幅', op:'<', value:'-2'}
+  ],
+  '杠杆看多': [
+    {logic:'AND', field:'融资净买入_亿', op:'>', value:'0'},
+    {logic:'AND', field:'份额日改变', op:'>', value:'0'}
+  ],
+  '国家队增仓': [
+    {logic:'AND', field:'比汇金改变比', op:'>', value:'0.1'},
+    {logic:'AND', field:'机构持仓占比', op:'>', value:'30'}
+  ],
+  '估值低位': [
+    {logic:'AND', field:'PE历史分位', op:'>', value:'0'},
+    {logic:'AND', field:'PE历史分位', op:'<', value:'20'}
+  ],
+  '估值高位': [
+    {logic:'AND', field:'PE历史分位', op:'>', value:'80'}
   ],
 };
 
