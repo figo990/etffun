@@ -59,3 +59,33 @@ tasks:
     enabled: false
     timeout: 900
     retry: 2
+  kline:
+    display_name: 日K线数据
+    schedule: "30 17 * * 1-5"
+    enabled: true
+    timeout: 600
+    retry: 2
+  sector_fund_flow:
+    display_name: 行业资金流向
+    schedule: "0 18 * * 1-5"
+    enabled: true
+    timeout: 120
+    retry: 2
+  index_valuation:
+    display_name: 指数估值
+    schedule: "30 10 * * 1"
+    enabled: true
+    timeout: 300
+    retry: 2
+  bond_yield:
+    display_name: 国债收益率
+    schedule: "10 18 * * 1-5"
+    enabled: true
+    timeout: 60
+    retry: 2
+  margin_detail:
+    display_name: 融资融券
+    schedule: "20 18 * * 1-5"
+    enabled: true
+    timeout: 120
+    retry: 2

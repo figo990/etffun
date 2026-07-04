@@ -518,3 +518,159 @@ def get_etf_option_latest():
 
 def update_fund_inst_hold(code, inst_hold_pct):
     execute("UPDATE fund SET inst_hold_pct = ? WHERE code = ?", [inst_hold_pct, code])
+
+
+# ─── daily_kline ─────────────────────────────────────────────
+
+def upsert_kline(records):
+    if not records:
+        return
+    sql = """
+        INSERT INTO daily_kline (date, code, open, high, low, close, volume, amount, amplitude, turnover)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (date, code) DO UPDATE SET
+            open      = COALESCE(EXCLUDED.open,      daily_kline.open),
+            high      = COALESCE(EXCLUDED.high,      daily_kline.high),
+            low       = COALESCE(EXCLUDED.low,       daily_kline.low),
+            close     = COALESCE(EXCLUDED.close,     daily_kline.close),
+            volume    = COALESCE(EXCLUDED.volume,    daily_kline.volume),
+            amount    = COALESCE(EXCLUDED.amount,    daily_kline.amount),
+            amplitude = COALESCE(EXCLUDED.amplitude, daily_kline.amplitude),
+            turnover  = COALESCE(EXCLUDED.turnover,  daily_kline.turnover)
+    """
+    rows = [(d, c, o, h, l, cl, v, am, amp, t)
+            for d, c, o, h, l, cl, v, am, amp, t in records]
+    execute_many(sql, rows)
+
+
+def query_kline(code, limit=120):
+    return _to_records(query("""
+        SELECT date, open, high, low, close, volume, amount, amplitude, turnover
+        FROM daily_kline
+        WHERE code = ? AND close IS NOT NULL
+        ORDER BY date DESC
+        LIMIT ?
+    """, [code, limit]))
+
+
+def get_codes_with_kline():
+    df = query("SELECT DISTINCT code FROM daily_kline")
+    return set(df['code'].tolist())
+
+
+# ─── sector_fund_flow ─────────────────────────────────────────
+
+def upsert_sector_fund_flow(records):
+    if not records:
+        return
+    sql = """
+        INSERT INTO sector_fund_flow (date, sector_name, net_main, net_super_large, net_large, net_medium, net_small)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (date, sector_name) DO UPDATE SET
+            net_main        = COALESCE(EXCLUDED.net_main,        sector_fund_flow.net_main),
+            net_super_large = COALESCE(EXCLUDED.net_super_large, sector_fund_flow.net_super_large),
+            net_large       = COALESCE(EXCLUDED.net_large,       sector_fund_flow.net_large),
+            net_medium      = COALESCE(EXCLUDED.net_medium,      sector_fund_flow.net_medium),
+            net_small       = COALESCE(EXCLUDED.net_small,       sector_fund_flow.net_small)
+    """
+    rows = [(d, s, nm, nsl, nl, nmd, ns) for d, s, nm, nsl, nl, nmd, ns in records]
+    execute_many(sql, rows)
+
+
+def query_latest_sector_flow():
+    return _to_records(query("""
+        SELECT sector_name, net_main, net_super_large, net_large, net_medium, net_small
+        FROM sector_fund_flow
+        WHERE date = (SELECT MAX(date) FROM sector_fund_flow)
+        ORDER BY ABS(net_main) DESC
+    """))
+
+
+# ─── index_valuation ───────────────────────────────────────────
+
+def upsert_index_valuation(records):
+    if not records:
+        return
+    sql = """
+        INSERT INTO index_valuation (date, index_code, index_name, pe, pb, dividend_yield, pe_percentile, pb_percentile)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (date, index_code) DO UPDATE SET
+            index_name     = COALESCE(EXCLUDED.index_name,     index_valuation.index_name),
+            pe             = COALESCE(EXCLUDED.pe,             index_valuation.pe),
+            pb             = COALESCE(EXCLUDED.pb,             index_valuation.pb),
+            dividend_yield = COALESCE(EXCLUDED.dividend_yield, index_valuation.dividend_yield),
+            pe_percentile  = COALESCE(EXCLUDED.pe_percentile,  index_valuation.pe_percentile),
+            pb_percentile  = COALESCE(EXCLUDED.pb_percentile,  index_valuation.pb_percentile)
+    """
+    rows = [(d, ic, inn, pe, pb, dy, pep, pbp) for d, ic, inn, pe, pb, dy, pep, pbp in records]
+    execute_many(sql, rows)
+
+
+def query_latest_index_valuation():
+    return _to_records(query("""
+        SELECT i.index_code, i.index_name, i.pe, i.pb, i.dividend_yield, i.pe_percentile, i.pb_percentile
+        FROM index_valuation i
+        INNER JOIN (
+            SELECT index_code, MAX(date) AS max_date
+            FROM index_valuation GROUP BY index_code
+        ) m ON i.index_code = m.index_code AND i.date = m.max_date
+    """))
+
+
+# ─── bond_yield ────────────────────────────────────────────────
+
+def upsert_bond_yield(date_str, y1, y2, y5, y10, y30, spread):
+    d = _norm_date(date_str)
+    sql = """
+        INSERT INTO bond_yield (date, y1, y2, y5, y10, y30, spread_10_2)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (date) DO UPDATE SET
+            y1          = COALESCE(EXCLUDED.y1,          bond_yield.y1),
+            y2          = COALESCE(EXCLUDED.y2,          bond_yield.y2),
+            y5          = COALESCE(EXCLUDED.y5,          bond_yield.y5),
+            y10         = COALESCE(EXCLUDED.y10,         bond_yield.y10),
+            y30         = COALESCE(EXCLUDED.y30,         bond_yield.y30),
+            spread_10_2 = COALESCE(EXCLUDED.spread_10_2, bond_yield.spread_10_2)
+    """
+    execute(sql, [d, y1, y2, y5, y10, y30, spread])
+
+
+def query_latest_bond_yield():
+    return query_one("""
+        SELECT date, y1, y2, y5, y10, y30, spread_10_2
+        FROM bond_yield
+        ORDER BY date DESC LIMIT 1
+    """)
+
+
+# ─── margin_detail ─────────────────────────────────────────────
+
+def upsert_margin_detail(records):
+    if not records:
+        return
+    sql = """
+        INSERT INTO margin_detail (date, code, margin_balance, margin_buy, margin_sell, margin_net_buy, short_balance)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (date, code) DO UPDATE SET
+            margin_balance = COALESCE(EXCLUDED.margin_balance, margin_detail.margin_balance),
+            margin_buy     = COALESCE(EXCLUDED.margin_buy,     margin_detail.margin_buy),
+            margin_sell    = COALESCE(EXCLUDED.margin_sell,    margin_detail.margin_sell),
+            margin_net_buy = COALESCE(EXCLUDED.margin_net_buy, margin_detail.margin_net_buy),
+            short_balance  = COALESCE(EXCLUDED.short_balance,  margin_detail.short_balance)
+    """
+    rows = [(d, c, mb, mbu, ms, mnb, sb) for d, c, mb, mbu, ms, mnb, sb in records]
+    execute_many(sql, rows)
+
+
+def query_latest_margin():
+    return _to_records(query("""
+        SELECT code, margin_balance, margin_buy, margin_sell, margin_net_buy, short_balance
+        FROM margin_detail
+        WHERE date = (SELECT MAX(date) FROM margin_detail)
+        ORDER BY ABS(margin_net_buy) DESC
+    """))
+
+
+def get_all_codes():
+    df = query("SELECT code FROM fund")
+    return [r['code'] for r in _to_records(df)]

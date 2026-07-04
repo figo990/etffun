@@ -15,6 +15,11 @@ from .tasks.fund_holding import HoldingTask
 from .tasks.northbound import NorthboundTask
 from .tasks.etf_option import EtfOptionTask
 from .tasks.inst_hold import InstHoldTask
+from .tasks.kline import KlineTask
+from .tasks.sector_fund_flow import SectorFundFlowTask
+from .tasks.index_valuation import IndexValuationTask
+from .tasks.bond_yield import BondYieldTask
+from .tasks.margin_detail import MarginDetailTask
 from db import init_task_status, write_task_trigger, consume_task_triggers, init_db
 
 TASK_CLASSES = {
@@ -28,6 +33,11 @@ TASK_CLASSES = {
     'northbound': NorthboundTask,
     'etf_option': EtfOptionTask,
     'inst_hold': InstHoldTask,
+    'kline': KlineTask,
+    'sector_fund_flow': SectorFundFlowTask,
+    'index_valuation': IndexValuationTask,
+    'bond_yield': BondYieldTask,
+    'margin_detail': MarginDetailTask,
 }
 
 

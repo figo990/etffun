@@ -142,5 +142,74 @@ def init_db():
         conn.execute("""
             CREATE SEQUENCE IF NOT EXISTS seq_task_history START 1
         """)
+
+        # === 新增数据源 ===
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS daily_kline (
+                date       DATE NOT NULL,
+                code       VARCHAR NOT NULL,
+                open       DOUBLE,
+                high       DOUBLE,
+                low        DOUBLE,
+                close      DOUBLE,
+                volume     DOUBLE,
+                amount     DOUBLE,
+                amplitude  DOUBLE,
+                turnover   DOUBLE,
+                PRIMARY KEY (date, code)
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sector_fund_flow (
+                date            DATE NOT NULL,
+                sector_name     VARCHAR NOT NULL,
+                net_main        DOUBLE,
+                net_super_large DOUBLE,
+                net_large       DOUBLE,
+                net_medium      DOUBLE,
+                net_small       DOUBLE,
+                PRIMARY KEY (date, sector_name)
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS index_valuation (
+                date           DATE NOT NULL,
+                index_code     VARCHAR NOT NULL,
+                index_name     VARCHAR,
+                pe             DOUBLE,
+                pb             DOUBLE,
+                dividend_yield DOUBLE,
+                pe_percentile   DOUBLE,
+                pb_percentile   DOUBLE,
+                PRIMARY KEY (date, index_code)
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS bond_yield (
+                date        DATE PRIMARY KEY,
+                y1          DOUBLE,
+                y2          DOUBLE,
+                y5          DOUBLE,
+                y10         DOUBLE,
+                y30         DOUBLE,
+                spread_10_2 DOUBLE
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS margin_detail (
+                date            DATE NOT NULL,
+                code            VARCHAR NOT NULL,
+                margin_balance  DOUBLE,
+                margin_buy      DOUBLE,
+                margin_sell     DOUBLE,
+                margin_net_buy  DOUBLE,
+                short_balance   DOUBLE,
+                PRIMARY KEY (date, code)
+            )
+        """)
     finally:
         conn.close()

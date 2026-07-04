@@ -13,5 +13,12 @@ from .queries import (
     upsert_etf_option, update_fund_inst_hold,
     init_task_status, consume_task_triggers,
     update_task_status, insert_task_history,
+    # new data sources
+    upsert_kline, query_kline, get_codes_with_kline,
+    upsert_sector_fund_flow, query_latest_sector_flow,
+    upsert_index_valuation, query_latest_index_valuation,
+    upsert_bond_yield, query_latest_bond_yield,
+    upsert_margin_detail, query_latest_margin,
+    get_all_codes,
 )
 from .schema import init_db
