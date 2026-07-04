@@ -39,10 +39,14 @@ def query(sql, params=None, max_retries=3, retry_delay=0.5):
 
 def query_one(sql, params=None, max_retries=3, retry_delay=0.5):
     try:
-        row = query(sql, params, max_retries, retry_delay).iloc[0].to_dict()
+        df = query(sql, params, max_retries, retry_delay)
+        for col in df.columns:
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                df[col] = df[col].apply(lambda v: v.strftime('%Y-%m-%d') if pd.notna(v) else None)
+        row = df.iloc[0].to_dict()
         for k, v in row.items():
-            if isinstance(v, pd.Timestamp):
-                row[k] = v.strftime('%Y-%m-%d')
+            if v is None or v is pd.NaT:
+                row[k] = None
             elif isinstance(v, float) and pd.isna(v):
                 row[k] = None
         return row

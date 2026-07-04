@@ -135,7 +135,7 @@ tbody tr:hover td{background:#fff6e5}
   .filter-panel.open{visibility:visible;opacity:1}
   .fp-header{display:flex}
   .fp-empty{padding:24px;text-align:center;color:#a0aec0;font-size:13px;flex:1}
-  .fp-grid{grid-template-columns:1fr;overflow-y:auto;flex:1;padding-bottom:4px}
+  .fp-grid{grid-template-columns:1fr;overflow-y:auto;flex:1;padding-bottom:4px;margin-bottom:0}
   .fp-actions{position:sticky;bottom:0;background:#fff;border-top:2px solid #00b894;padding:8px 4px 4px;flex-shrink:0;z-index:1}
   .col-panel{position:fixed;top:auto;bottom:0;left:0;right:0;min-width:auto;max-height:50vh;overflow-y:auto;border-radius:8px 8px 0 0}
   .col-item{font-size:12px}
