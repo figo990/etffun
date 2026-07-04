@@ -137,10 +137,13 @@ def trigger_poll_loop(scheduler):
                     task_cls = TASK_CLASSES.get(task_name)
                     if task_cls:
                         task_instance = task_cls()
-                        task_instance.run()
-                        print(f"  [trigger] {task_name} executed immediately")
+                        try:
+                            task_instance.run()
+                            print(f"  [trigger] {task_name} completed", flush=True)
+                        except Exception as e:
+                            print(f"  [trigger] {task_name} FAILED: {e}", flush=True)
                     else:
-                        print(f"  [trigger] unknown task: {task_name}")
+                        print(f"  [trigger] unknown task: {task_name}", flush=True)
         except Exception as e:
             print(f"  [trigger] poll error: {e}", flush=True)
         time.sleep(10)
