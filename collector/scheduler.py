@@ -20,6 +20,7 @@ from .tasks.sector_fund_flow import SectorFundFlowTask
 from .tasks.index_valuation import IndexValuationTask
 from .tasks.bond_yield import BondYieldTask
 from .tasks.margin_detail import MarginDetailTask
+from .tasks.backfill_prices import BackfillPricesTask
 from db import init_task_status, write_task_trigger, consume_task_triggers, init_db
 
 TASK_CLASSES = {
@@ -38,7 +39,25 @@ TASK_CLASSES = {
     'index_valuation': IndexValuationTask,
     'bond_yield': BondYieldTask,
     'margin_detail': MarginDetailTask,
+    'backfill_prices': BackfillPricesTask,
 }
+
+
+def _cron_dow_to_aps(dow_expr):
+    """Convert cron day-of-week (0-7, 0/7=Sun, 1=Mon...) to APScheduler (0=Mon...6=Sun)."""
+    if dow_expr == '*' or dow_expr is None:
+        return '*'
+    aps_parts = []
+    for part in dow_expr.split(','):
+        part = part.strip()
+        if '-' in part:
+            start, end = part.split('-', 1)
+            s = (int(start) + 6) % 7
+            e = (int(end) + 6) % 7
+            aps_parts.append(f'{s}-{e}')
+        else:
+            aps_parts.append(str((int(part) + 6) % 7))
+    return ','.join(aps_parts)
 
 
 def _parse_cron(expr):
@@ -51,18 +70,18 @@ def _parse_cron(expr):
             tr = parts[1]
             start_h, start_m = int(tr.split('-')[0].split(':')[0]), int(tr.split('-')[0].split(':')[1])
             end_h, end_m = int(tr.split('-')[1].split(':')[0]), int(tr.split('-')[1].split(':')[1])
-            dow = parts[4] if len(parts) >= 5 else '*'
+            dow = _cron_dow_to_aps(parts[4] if len(parts) >= 5 else '*')
             return CronTrigger(
                 minute=f'*/{minutes}', hour=f'{start_h}-{end_h}',
                 day='*', month='*', day_of_week=dow
             )
-        dow = parts[4] if len(parts) >= 5 else '*'
+        dow = _cron_dow_to_aps(parts[4] if len(parts) >= 5 else '*')
         return CronTrigger(minute=f'*/{minutes}', hour='*', day='*', month='*', day_of_week=dow)
     if len(parts) != 5:
         raise ValueError(f"Invalid cron expression: {expr}")
     return CronTrigger(
         minute=parts[0], hour=parts[1], day=parts[2],
-        month=parts[3], day_of_week=parts[4]
+        month=parts[3], day_of_week=_cron_dow_to_aps(parts[4])
     )
 
 
