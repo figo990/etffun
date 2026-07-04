@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request
-from db import get_task_status_all, write_task_trigger, get_task_history
+from db import get_task_status_all, write_task_trigger, get_task_history, safe_error
 from ..cache import cache
 
 admin_api = Blueprint('admin_api', __name__)
@@ -23,7 +23,7 @@ def list_tasks():
         data = cache.get_tasks(force=request.args.get('force') == '1')
         return jsonify(data)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': safe_error(e)}), 500
 
 
 @admin_api.route('/api/admin/tasks/<name>/run', methods=['POST'])
@@ -34,7 +34,7 @@ def trigger_task(name):
         write_task_trigger(name, 'run_now')
         return jsonify({'ok': True, 'message': f'Task {name} triggered'})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': safe_error(e)}), 500
 
 
 @admin_api.route('/api/admin/tasks/<name>/toggle', methods=['POST'])
@@ -46,7 +46,7 @@ def toggle_task(name):
         new_state = toggle_task_enabled(name)
         return jsonify({'ok': True, 'enabled': new_state})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': safe_error(e)}), 500
 
 
 @admin_api.route('/api/admin/tasks/<name>/history', methods=['GET'])
@@ -58,4 +58,4 @@ def task_history(name):
         data = get_task_history(name, limit)
         return jsonify(data)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': safe_error(e)}), 500

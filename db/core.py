@@ -2,6 +2,7 @@ import duckdb
 import pandas as pd
 import os
 import time
+import re
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, 'data')
@@ -9,7 +10,21 @@ DB_PATH = os.environ.get('ETF_DB_PATH') or os.path.join(DATA_DIR, 'etf.duckdb')
 os.makedirs(DATA_DIR, exist_ok=True)
 
 
+def safe_error(e):
+    """Sanitize error message: strip file paths, keep user-friendly message."""
+    msg = str(e)
+    if DATA_DIR and DATA_DIR in msg:
+        msg = msg.replace(DATA_DIR, '<data>')
+    msg = re.sub(r'"[A-Z]:[^"]*"', '<path>', msg)
+    msg = re.sub(r'"/[^"]*"', '<path>', msg)
+    msg = msg.replace('<data><path>', '<data>')
+    return msg[:200]
+
+
 def get_conn(read_only=False):
+    if read_only and not os.path.exists(DB_PATH):
+        conn = duckdb.connect(DB_PATH)
+        conn.close()
     return duckdb.connect(DB_PATH, read_only=read_only)
 
 

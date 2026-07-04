@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request
-from db import get_prices, query_kline, query_latest_sector_flow, query_latest_index_valuation, query_latest_bond_yield, query_latest_margin
+from db import get_prices, query_kline, query_latest_sector_flow, query_latest_index_valuation, query_latest_bond_yield, query_latest_margin, safe_error
 from ..cache import cache
 
 etf_api = Blueprint('etf_api', __name__)
@@ -11,7 +11,7 @@ def get_all_etf():
         data = cache.get_etf_all()
         return jsonify(data)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': safe_error(e)}), 500
 
 
 @etf_api.route('/api/etf/prices')
@@ -20,7 +20,7 @@ def get_prices_route():
         data = get_prices()
         return jsonify(data)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': safe_error(e)}), 500
 
 
 @etf_api.route('/api/etf/kline')
@@ -33,7 +33,7 @@ def get_kline():
         data = query_kline(code, limit)
         return jsonify(data)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': safe_error(e)}), 500
 
 
 @etf_api.route('/api/etf/sector-flow')
@@ -42,7 +42,7 @@ def get_sector_flow():
         data = query_latest_sector_flow()
         return jsonify(data)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': safe_error(e)}), 500
 
 
 @etf_api.route('/api/etf/indices/valuation')
@@ -51,7 +51,7 @@ def get_indices_valuation():
         data = query_latest_index_valuation()
         return jsonify(data)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': safe_error(e)}), 500
 
 
 @etf_api.route('/api/etf/bond-yield')
@@ -60,7 +60,7 @@ def get_bond_yield():
         data = query_latest_bond_yield()
         return jsonify(data)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': safe_error(e)}), 500
 
 
 @etf_api.route('/api/etf/margin')
@@ -69,4 +69,4 @@ def get_margin():
         data = query_latest_margin()
         return jsonify(data)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': safe_error(e)}), 500
