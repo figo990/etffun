@@ -2,7 +2,7 @@ import json
 import os
 from datetime import datetime
 
-from .core import query, query_one, execute, execute_many, _to_records, DB_PATH, BASE_DIR, DATA_DIR
+from .core import get_conn, query, query_one, execute, execute_many, _to_records, DB_PATH, BASE_DIR, DATA_DIR
 from .schema import init_db
 import duckdb
 import pandas as pd
@@ -303,11 +303,18 @@ def write_task_trigger(task_name, action, params=None):
 
 
 def consume_task_triggers():
-    return _to_records(query("""
-        UPDATE task_trigger SET consumed = TRUE
-        WHERE consumed = FALSE AND created <= NOW()
-        RETURNING id, task_name, action, params
-    """))
+    conn = get_conn(read_only=False)
+    try:
+        df = conn.execute("""
+            UPDATE task_trigger SET consumed = TRUE
+            WHERE consumed = FALSE AND created <= NOW()
+            RETURNING id, task_name, action, params
+        """).fetchdf()
+        conn.close()
+        return _to_records(df)
+    except Exception as e:
+        conn.close()
+        raise e
 
 
 def get_task_history(task_name, limit=20):

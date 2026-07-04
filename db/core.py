@@ -80,7 +80,7 @@ def _to_records(df):
     df = df.where(pd.notna(df), None)
     for col in df.columns:
         if pd.api.types.is_datetime64_any_dtype(df[col]):
-            df[col] = df[col].apply(lambda v: v.strftime('%Y-%m-%d') if pd.notna(v) else None)
+            df[col] = df[col].apply(lambda v: v.strftime('%Y-%m-%d') if pd.notna(v) and v is not pd.NaT else None)
     records = df.to_dict('records')
     for row in records:
         for k, v in row.items():
