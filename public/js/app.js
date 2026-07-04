@@ -40,6 +40,12 @@ const ALL_COLS = [
   {key:'认购IV', label:'波动率IV', group:'期权', def:false, srt:true, tip:'期权隐含波动率指数(QVIX收盘)'},
   {key:'认沽IV', label:'IV最高', group:'期权', def:false, srt:true, tip:'日内波动率最高值'},
   {key:'PCR成交量比', label:'PCR量比', group:'期权', def:false, srt:true, tip:'看跌/看涨成交量比(>1偏空)'},
+  {key:'市盈率PE', label:'PE', group:'估值', def:false, srt:true, tip:'指数市盈率'},
+  {key:'市净率PB', label:'PB', group:'估值', def:false, srt:true, tip:'指数市净率'},
+  {key:'PE历史分位', label:'PE分位', group:'估值', def:false, srt:true, tip:'PE历史百分位(<20%低估)'},
+  {key:'PB历史分位', label:'PB分位', group:'估值', def:false, srt:true, tip:'PB历史百分位(<20%低估)'},
+  {key:'融资余额_亿', label:'融资(亿)', group:'两融', def:false, srt:true, tip:'融资余额'},
+  {key:'融资净买入_亿', label:'融资净买(亿)', group:'两融', def:false, srt:true, tip:'融资净买入额'},
 ];
 
 let visibleKeys = new Set();
@@ -716,6 +722,8 @@ async function loadData(){
     allData=d;
     render(allData);
     loadNorthbound();
+    loadBondYield();
+    loadSectorFlow();
   }catch(e){
     document.getElementById('tbody').innerHTML='<tr><td colspan="'+cc+'" class="error">加载失败: '+e.message+'</td></tr>';
   }
@@ -732,6 +740,77 @@ async function loadNorthbound(){
       if(nbEl) nbEl.innerHTML = `北向: <b class="${cls}">${net>=0?'+':''}${net.toFixed(2)}</b>亿`;
     }
   }catch(e){}
+}
+
+async function loadBondYield(){
+  try{
+    const r=await fetch('/api/etf/bond-yield');
+    const d=await r.json();
+    if(d && d.y10 != null){
+      const el = document.getElementById('bondYieldInfo');
+      if(el){
+        const y10Cls = d.y10 < 2 ? 'neg' : (d.y10 > 3 ? 'pos' : '');
+        const spreadCls = d.spread_10_2 != null ? (d.spread_10_2 < 0 ? 'pos' : '') : '';
+        let html = `10Y:<b class="${y10Cls}">${d.y10.toFixed(2)}%</b>`;
+        if(d.spread_10_2 != null) html += ` | 10-2Y:<b class="${spreadCls}">${d.spread_10_2.toFixed(2)}%</b>`;
+        el.innerHTML = html;
+      }
+    }
+  }catch(e){}
+}
+
+async function loadSectorFlow(){
+  try{
+    const r=await fetch('/api/etf/sector-flow');
+    const d=await r.json();
+    if(!d || !d.length) return;
+    const panel = document.getElementById('sectorFlowPanel');
+    panel.style.display = '';
+    const body = document.getElementById('sectorFlowBody');
+    let html = '<table class="sf-table"><tr><th>行业</th><th>主力净流入</th><th>超大单</th><th>大单</th><th>中单</th><th>小单</th></tr>';
+    d.forEach(s => {
+      const nm = Number(s.net_main || 0);
+      const cls = nm >= 0 ? 'pos' : 'neg';
+      html += `<tr class="sf-row" data-sector="${escHtml(s.sector_name)}">
+        <td class="sf-name">${escHtml(s.sector_name)}</td>
+        <td class="sf-num ${cls}">${fmtNum(nm)}</td>
+        <td class="sf-num">${fmtNum(s.net_super_large)}</td>
+        <td class="sf-num">${fmtNum(s.net_large)}</td>
+        <td class="sf-num">${fmtNum(s.net_medium)}</td>
+        <td class="sf-num">${fmtNum(s.net_small)}</td>
+      </tr>`;
+    });
+    html += '</table>';
+    body.innerHTML = html;
+    document.querySelectorAll('.sf-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const sector = row.dataset.sector;
+        applySectorFilter(sector);
+      });
+    });
+  }catch(e){}
+}
+
+function escHtml(s){
+  if(!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtNum(v){
+  if(v == null) return '<span class="na">--</span>';
+  const n = Number(v);
+  if(n >= 10000) return (n/10000).toFixed(2) + '亿';
+  return n.toFixed(2) + '万';
+}
+
+function applySectorFilter(sector){
+  const rules = [{logic:'AND', field:'跟踪指数', op:'contains', value:sector}];
+  filterRules = rules;
+  _selectedPreset = '';
+  localStorage.removeItem('etf_selected_preset');
+  saveFilterRules();
+  renderFilterPanel();
+  render();
 }
 
 // ====== Init ======
@@ -773,6 +852,14 @@ document.getElementById('searchInput').addEventListener('input', () => {
 });
 document.getElementById('exchangeFilter').addEventListener('change', () => render());
 document.getElementById('refreshBtn').addEventListener('click', loadData);
+
+document.getElementById('sectorFlowToggle').addEventListener('click', () => {
+  const body = document.getElementById('sectorFlowBody');
+  const arrow = document.querySelector('.sf-arrow');
+  const show = body.style.display !== 'block';
+  body.style.display = show ? 'block' : 'none';
+  if(arrow) arrow.textContent = show ? '▾' : '▸';
+});
 
 updateFilterBadge();
 loadData();

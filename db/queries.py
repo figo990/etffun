@@ -82,11 +82,21 @@ def get_all_etf():
             f.inst_hold_pct                                              AS "机构持仓占比",
             o.call_iv                                                    AS "认购IV",
             o.put_iv                                                     AS "认沽IV",
-            o.pcr_volume                                                 AS "PCR成交量比"
+            o.pcr_volume                                                 AS "PCR成交量比",
+            v.pe                                                         AS "市盈率PE",
+            v.pb                                                         AS "市净率PB",
+            v.pe_percentile                                              AS "PE历史分位",
+            v.pb_percentile                                              AS "PB历史分位",
+            ROUND(m.margin_balance / 1e8, 2)                             AS "融资余额_亿",
+            ROUND(m.margin_net_buy / 1e8, 2)                             AS "融资净买入_亿"
         FROM with_chg r
         JOIN fund f ON r.code = f.code
         LEFT JOIN index_spot i ON f.index_code = i.code
         LEFT JOIN opt o ON r.code = o.code
+        LEFT JOIN index_valuation v ON f.index_code = v.index_code
+            AND v.date = (SELECT MAX(date) FROM index_valuation WHERE index_code = f.index_code)
+        LEFT JOIN margin_detail m ON r.code = m.code
+            AND m.date = (SELECT MAX(date) FROM margin_detail WHERE code = r.code)
         WHERE r.rn = 1
         ORDER BY
             CASE WHEN f.huijin_亿 IS NOT NULL THEN 0 ELSE 1 END,
