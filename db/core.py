@@ -7,6 +7,7 @@ import re
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 DB_PATH = os.environ.get('ETF_DB_PATH') or os.path.join(DATA_DIR, 'etf.duckdb')
+READ_DB_PATH = os.environ.get('ETF_READ_DB_PATH') or os.path.join(DATA_DIR, 'etf_read.duckdb')
 os.makedirs(DATA_DIR, exist_ok=True)
 
 
@@ -35,10 +36,14 @@ def safe_error(e):
 
 
 def get_conn(read_only=False):
-    if read_only and not os.path.exists(DB_PATH):
-        conn = duckdb.connect(DB_PATH)
+    if read_only:
+        path = READ_DB_PATH if os.path.exists(READ_DB_PATH) else DB_PATH
+    else:
+        path = DB_PATH
+    if not os.path.exists(path):
+        conn = duckdb.connect(path)
         conn.close()
-    return duckdb.connect(DB_PATH, read_only=read_only)
+    return duckdb.connect(path, read_only=read_only)
 
 
 def query(sql, params=None, max_retries=20, retry_delay=1):
