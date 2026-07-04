@@ -1,7 +1,7 @@
 """一次性回填历史K线数据（手动运行）"""
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 os.environ['PYTHONUNBUFFERED'] = '1'
 
 import akshare as ak

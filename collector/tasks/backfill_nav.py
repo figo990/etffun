@@ -5,7 +5,7 @@ Price history: still blocked, skip for now
 """
 import sys, os, time
 from datetime import datetime, timedelta
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import akshare as ak
 import pandas as pd

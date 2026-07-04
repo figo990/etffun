@@ -201,7 +201,8 @@ tbody tr:hover td{background:#fff6e5}
 }
 
 /* Code column clickable */
-.cell-code{cursor:pointer;position:relative}
+.cell-code{cursor:pointer}
+td.cell-code{position:relative}
 .cell-code:hover{background:#e6fffa!important}
 .cell-code::after{content:'';position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:14px;height:2px;background:#00b894;border-radius:1px;opacity:0;transition:opacity .15s}
 .cell-code:hover::after{opacity:.6}

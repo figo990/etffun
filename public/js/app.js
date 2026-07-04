@@ -31,21 +31,21 @@ const ALL_COLS = [
   {key:'净值', label:'净值', group:'净值', def:true, srt:true},
   {key:'净值日期', label:'净值日期', group:'净值', def:false, srt:true},
   {key:'净值溢价率', label:'净值溢价率', group:'净值', def:false, srt:true},
-  {key:'基金公司', label:'基金公司', group:'其他', def:true, srt:true},
+  {key:'市盈率PE', label:'PE', group:'估值', def:false, srt:true, tip:'指数市盈率'},
+  {key:'市净率PB', label:'PB', group:'估值', def:false, srt:true, tip:'指数市净率'},
+  {key:'PE历史分位', label:'PE分位', group:'估值', def:true, srt:true, tip:'PE历史百分位(<20%低估)'},
+  {key:'PB历史分位', label:'PB分位', group:'估值', def:true, srt:true, tip:'PB历史百分位(<20%低估)'},
   {key:'跟踪指数', label:'跟踪指数', group:'其他', def:true, srt:true, tip:'跟踪的指数名称'},
   {key:'指数涨跌幅', label:'指数涨跌', group:'其他', def:true, srt:true},
+  {key:'基金公司', label:'基金公司', group:'其他', def:false, srt:true},
   {key:'汇金持股_亿', label:'汇金(亿)', group:'其他', def:false, srt:true},
   {key:'比汇金改变比', label:'比汇金', group:'其他', def:true, srt:true, tip:'份额改变额÷汇金持股数'},
   {key:'机构持仓占比', label:'机构占比%', group:'机构', def:false, srt:true, tip:'机构投资者持有比例'},
+  {key:'融资余额_亿', label:'融资(亿)', group:'两融', def:false, srt:true, tip:'融资余额'},
+  {key:'融资净买入_亿', label:'融资净买(亿)', group:'两融', def:true, srt:true, tip:'融资净买入额'},
   {key:'认购IV', label:'波动率IV', group:'期权', def:false, srt:true, tip:'期权隐含波动率指数(QVIX收盘)'},
   {key:'认沽IV', label:'IV最高', group:'期权', def:false, srt:true, tip:'日内波动率最高值'},
   {key:'PCR成交量比', label:'PCR量比', group:'期权', def:false, srt:true, tip:'看跌/看涨成交量比(>1偏空)'},
-  {key:'市盈率PE', label:'PE', group:'估值', def:false, srt:true, tip:'指数市盈率'},
-  {key:'市净率PB', label:'PB', group:'估值', def:false, srt:true, tip:'指数市净率'},
-  {key:'PE历史分位', label:'PE分位', group:'估值', def:false, srt:true, tip:'PE历史百分位(<20%低估)'},
-  {key:'PB历史分位', label:'PB分位', group:'估值', def:false, srt:true, tip:'PB历史百分位(<20%低估)'},
-  {key:'融资余额_亿', label:'融资(亿)', group:'两融', def:false, srt:true, tip:'融资余额'},
-  {key:'融资净买入_亿', label:'融资净买(亿)', group:'两融', def:false, srt:true, tip:'融资净买入额'},
 ];
 
 let visibleKeys = new Set();
@@ -113,7 +113,9 @@ const NUM_COLS = new Set([
   '份额月改变','份额月改变比例','最新价','涨跌幅','周涨跌幅','月涨跌幅',
   '成交额_万','IOPV','基金折价率','规模_亿','规模日改变_亿','净值',
   '净值溢价率','指数涨跌幅','汇金持股_亿','比汇金改变比',
-  '机构持仓占比','认购IV','认沽IV','PCR成交量比'
+  '机构持仓占比','认购IV','认沽IV','PCR成交量比',
+  '市盈率PE','市净率PB','PE历史分位','PB历史分位',
+  '融资余额_亿','融资净买入_亿'
 ]);
 function cellClass(col){
   const classes = [`col-${col.key.replace(/[^\w\u4e00-\u9fa5]/g,'-')}`];
@@ -509,13 +511,17 @@ function renderFull(f, vCols) {
   document.getElementById('tbody').innerHTML = parts.join('');
 }
 
-const ROW_H = 31;
+function getRowHeight() {
+  const w = window.innerWidth;
+  return w <= 480 ? 28 : w <= 900 ? 30 : 31;
+}
 const SCROLL_BUF = 12;
 
 function renderVirtualChunk(f, vCols) {
   const wrap = document.querySelector('.table-wrap');
   const st = wrap.scrollTop;
   const vh = wrap.clientHeight;
+  const ROW_H = getRowHeight();
   const startRow = Math.max(0, Math.floor(st / ROW_H) - SCROLL_BUF);
   const endRow = Math.min(f.length, startRow + Math.ceil(vh / ROW_H) + 2 * SCROLL_BUF);
   const topPad = startRow * ROW_H;
@@ -698,7 +704,7 @@ function renderFilterPanel() {
     if (_selectedPreset) presetSel.value = _selectedPreset;
     presetSel.addEventListener('change', () => {
       const val = presetSel.value;
-      if (!val) { _selectedPreset = ''; localStorage.removeItem('etf_selected_preset'); localStorage.removeItem('etf_selected_preset'); return; }
+      if (!val) { _selectedPreset = ''; localStorage.removeItem('etf_selected_preset'); return; }
       _selectedPreset = val;
       localStorage.setItem('etf_selected_preset', val);
       if (val.startsWith('p:')) {
@@ -706,6 +712,22 @@ function renderFilterPanel() {
         filterRules = savedP[val.slice(2)] || [];
       } else if (FILTER_PRESETS[val]) {
         filterRules = JSON.parse(JSON.stringify(FILTER_PRESETS[val]));
+      }
+      // Auto-show relevant columns for this preset
+      const PRESET_SHOW_COLS = {
+        '估值低位': ['PE历史分位','PB历史分位'],
+        '估值高位': ['PE历史分位','PB历史分位'],
+        '杠杆看多': ['融资余额_亿','融资净买入_亿'],
+        '恐慌抄底': ['PCR成交量比','融资净买入_亿'],
+        '折价博弈(<-1.5%)': ['净值溢价率','IOPV'],
+        '溢价预警(>1.5%)': ['净值溢价率','IOPV'],
+        '汇金动态调仓': ['汇金持股_亿','比汇金改变比'],
+        '国家队增仓': ['机构持仓占比','比汇金改变比'],
+      };
+      const showCols = PRESET_SHOW_COLS[val.replace(/^p:/, '')];
+      if (showCols) {
+        showCols.forEach(k => visibleKeys.add(k));
+        localStorage.setItem('etf_visible_cols', JSON.stringify([...visibleKeys]));
       }
       saveFilterRules(); renderFilterPanel(); render();
     });
@@ -743,7 +765,7 @@ function getColCount(){return Math.max(1, getVisibleCols().length);}
 // ====== Data Load ======
 async function loadData(){
   const cc=getColCount();
-  document.getElementById('tbody').innerHTML='<tr><td colspan="'+cc+'" class="loading">加载份额数据...</td></tr>';
+  document.getElementById('tbody').innerHTML='<tr><td colspan="'+cc+'" class="loading">加载ETF数据...</td></tr>';
   try{
     const r=await fetch('/api/etf/all');
     const d=await r.json();
@@ -857,13 +879,17 @@ function openDetail(code, name){
   fetchKlineAndRender(code, name);
 }
 
-document.getElementById('detailClose').addEventListener('click', () => {
-  document.getElementById('detailModal').style.display = 'none';
-});
+document.getElementById('detailClose').addEventListener('click', closeDetail);
 document.getElementById('detailModal').addEventListener('click', (e) => {
   if(e.target.closest('.modal-content')) return;
-  document.getElementById('detailModal').style.display = 'none';
+  closeDetail();
 });
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'Escape') closeDetail();
+});
+function closeDetail(){
+  document.getElementById('detailModal').style.display = 'none';
+}
 
 async function fetchKlineAndRender(code, name){
   try{
@@ -1090,11 +1116,11 @@ document.addEventListener('click', (e) => {
     colPanel.style.display = 'none';
   }
 });
-document.getElementById('filterPanel').addEventListener('click', (e) => e.stopPropagation());
 document.getElementById('filterPanel').addEventListener('click', (e) => {
   if (e.target.id === 'fpCloseBtn') {
     document.getElementById('filterPanel').classList.remove('open');
   }
+  e.stopPropagation();
 });
 
 document.getElementById('colToggleBtn').addEventListener('click', () => {
