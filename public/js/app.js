@@ -482,8 +482,14 @@ function render(data) {
 function _getMaxDate() {
   let m = '';
   for (let i = 0; i < allData.length; i++) {
-    const d = allData[i].日期;
-    if (d && d > m) m = d;
+    const d = allData[i];
+    if (d.最新价 != null && d.日期 > m) m = d.日期;
+  }
+  if (!m) {
+    for (let i = 0; i < allData.length; i++) {
+      const dt = allData[i].日期;
+      if (dt > m) m = dt;
+    }
   }
   if (m) return m.slice(0,4)+'-'+m.slice(4,6)+'-'+m.slice(6,8);
   return '';
