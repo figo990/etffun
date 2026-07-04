@@ -467,7 +467,7 @@ function renderFull(f, vCols) {
   const parts = [];
   for (let i = 0; i < f.length; i++) {
     const d = f[i];
-    parts.push('<tr>');
+    parts.push('<tr data-code="' + escAttr(d['代码']) + '">');
     for (let j = 0; j < vCols.length; j++) {
       const c = vCols[j];
       parts.push(`<td class="${c.cls}">${c.fn ? c.fn(d) : _na()}</td>`);
@@ -496,7 +496,7 @@ function renderVirtualChunk(f, vCols) {
   }
   for (let i = startRow; i < endRow; i++) {
     const d = f[i];
-    parts.push('<tr>');
+    parts.push('<tr data-code="' + escAttr(d['代码']) + '">');
     for (let j = 0; j < colSpan; j++) {
       const c = vCols[j];
       parts.push(`<td class="${c.cls}">${c.fn ? c.fn(d) : _na()}</td>`);
@@ -795,6 +795,9 @@ function escHtml(s){
   if(!s) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+function escAttr(s){
+  return String(s).replace(/"/g,'&quot;').replace(/&/g,'&amp;');
+}
 
 function fmtNum(v){
   if(v == null) return '<span class="na">--</span>';
@@ -811,6 +814,230 @@ function applySectorFilter(sector){
   saveFilterRules();
   renderFilterPanel();
   render();
+}
+
+// ====== ETF Detail Panel ======
+function openDetail(code, name){
+  const modal = document.getElementById('detailModal');
+  document.getElementById('detailTitle').textContent = code + ' ' + (name || '');
+  modal.style.display = 'flex';
+  document.getElementById('detailMeta').innerHTML = '<span class="loading" style="padding:8px">加载K线数据...</span>';
+  fetchKlineAndRender(code, name);
+}
+
+document.getElementById('detailClose').addEventListener('click', () => {
+  document.getElementById('detailModal').style.display = 'none';
+});
+document.getElementById('detailModal').addEventListener('click', (e) => {
+  if(e.target.closest('.modal-content')) return;
+  document.getElementById('detailModal').style.display = 'none';
+});
+
+async function fetchKlineAndRender(code, name){
+  try{
+    const r = await fetch('/api/etf/kline?code=' + code + '&limit=120');
+    const data = await r.json();
+    if(!data || !data.length){
+      document.getElementById('detailMeta').innerHTML = '<span class="na">K线数据暂不可用（backfill进行中）</span>';
+      return;
+    }
+    data.reverse();
+    renderKlineChart(data);
+    const meta = document.getElementById('detailMeta');
+    const last = data[data.length-1];
+    const prices = data.map(d => d.close);
+    const ma5 = calcMA(prices, 5);
+    const ma20 = calcMA(prices, 20);
+    const rsi = calcRSI(prices, 14);
+    const bbands = calcBollinger(prices, 20, 2);
+    const lastMA5 = ma5[ma5.length-1];
+    const lastMA20 = ma20[ma20.length-1];
+    const lastRSI = rsi[rsi.length-1];
+    const lastBB = bbands[bbands.length-1];
+    let html = '';
+    html += '<span class="dm-item">收盘:<b>' + last.close + '</b></span>';
+    if(lastMA5 != null) html += '<span class="dm-item">MA5:<b>' + lastMA5.toFixed(2) + '</b></span>';
+    if(lastMA20 != null) html += '<span class="dm-item">MA20:<b>' + lastMA20.toFixed(2) + '</b></span>';
+    if(lastRSI != null){
+      const rsiCls = lastRSI < 30 ? 'neg' : (lastRSI > 70 ? 'pos' : '');
+      html += '<span class="dm-item">RSI(14):<b class="' + rsiCls + '">' + lastRSI.toFixed(1) + '</b></span>';
+    }
+    if(lastBB){
+      html += '<span class="dm-item">布林上:<b>' + lastBB.upper.toFixed(2) + '</b></span>';
+      html += '<span class="dm-item">布林中:<b>' + lastBB.mid.toFixed(2) + '</b></span>';
+      html += '<span class="dm-item">布林下:<b>' + lastBB.lower.toFixed(2) + '</b></span>';
+    }
+    html += '<span class="dm-item">振幅:<b>' + last.amplitude + '%</b></span>';
+    if(last.volume) html += '<span class="dm-item">成交量:<b>' + fmtVol(last.volume) + '</b></span>';
+    if(last.turnover != null) html += '<span class="dm-item">换手率:<b>' + last.turnover + '%</b></span>';
+    meta.innerHTML = html;
+  }catch(e){
+    document.getElementById('detailMeta').innerHTML = '<span class="error" style="padding:8px">加载失败: ' + e.message + '</span>';
+  }
+}
+
+function fmtVol(v){
+  if(v == null) return '--';
+  if(v >= 1e8) return (v/1e8).toFixed(2) + '亿';
+  if(v >= 1e4) return (v/1e4).toFixed(0) + '万';
+  return v.toFixed(0);
+}
+
+function calcMA(data, period){
+  const result = [];
+  for(let i=0; i<data.length; i++){
+    if(i < period-1){ result.push(null); continue; }
+    let sum = 0;
+    for(let j=i-period+1; j<=i; j++) sum += data[j];
+    result.push(sum / period);
+  }
+  return result;
+}
+
+function calcRSI(data, period){
+  const result = [];
+  for(let i=0; i<data.length; i++){
+    if(i < period){ result.push(null); continue; }
+    let gains = 0, losses = 0;
+    for(let j=i-period+1; j<=i; j++){
+      const diff = data[j] - data[j-1];
+      if(diff > 0) gains += diff;
+      else losses -= diff;
+    }
+    const avgGain = gains / period;
+    const avgLoss = losses / period;
+    if(avgLoss === 0){ result.push(100); continue; }
+    const rs = avgGain / avgLoss;
+    result.push(100 - 100 / (1 + rs));
+  }
+  return result;
+}
+
+function calcBollinger(data, period, k){
+  const result = [];
+  for(let i=0; i<data.length; i++){
+    if(i < period-1){ result.push(null); continue; }
+    let sum = 0;
+    for(let j=i-period+1; j<=i; j++) sum += data[j];
+    const mid = sum / period;
+    let sqSum = 0;
+    for(let j=i-period+1; j<=i; j++) sqSum += (data[j] - mid) ** 2;
+    const std = Math.sqrt(sqSum / period);
+    result.push({mid, upper: mid + k*std, lower: mid - k*std});
+  }
+  return result;
+}
+
+function renderKlineChart(data){
+  const canvas = document.getElementById('klineCanvas');
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(400, rect.width - 2);
+  const h = 360;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const pad = {top:20, bottom:25, left:10, right:10};
+  const chartW = w - pad.left - pad.right;
+  const chartH = h - pad.top - pad.bottom;
+
+  const prices = data.map(d => d.close);
+  const ma5 = calcMA(prices, 5);
+  const ma20 = calcMA(prices, 20);
+  const bbands = calcBollinger(prices, 20, 2);
+
+  const validPrices = prices.filter(p => p != null);
+  if(!validPrices.length) return;
+  const minP = Math.min(...validPrices);
+  const maxP = Math.max(...validPrices);
+  const range = maxP - minP || 1;
+  const padRange = range * 0.08;
+  const yMin = minP - padRange;
+  const yMax = maxP + padRange;
+
+  const toX = i => pad.left + (i / (data.length-1)) * chartW;
+  const toY = v => pad.top + chartH - ((v - yMin) / (yMax - yMin)) * chartH;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Grid lines
+  ctx.strokeStyle = '#f0f0f0';
+  ctx.lineWidth = 1;
+  for(let i=0; i<5; i++){
+    const y = pad.top + (i/4) * chartH;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w-pad.right, y); ctx.stroke();
+  }
+
+  // Bollinger Bands
+  ctx.fillStyle = 'rgba(0,184,148,0.06)';
+  ctx.beginPath();
+  let started = false;
+  for(let i=0; i<data.length; i++){
+    const bb = bbands[i];
+    if(!bb){ continue; }
+    if(!started){ ctx.moveTo(toX(i), toY(bb.upper)); started = true; }
+    else ctx.lineTo(toX(i), toY(bb.upper));
+  }
+  for(let i=data.length-1; i>=0; i--){
+    const bb = bbands[i];
+    if(!bb) continue;
+    ctx.lineTo(toX(i), toY(bb.lower));
+  }
+  ctx.closePath(); ctx.fill();
+
+  // MA20
+  ctx.strokeStyle = '#f39c12';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4,3]);
+  ctx.beginPath();
+  started = false;
+  for(let i=0; i<data.length; i++){
+    const v = ma20[i];
+    if(v == null){ started = false; continue; }
+    if(!started){ ctx.moveTo(toX(i), toY(v)); started = true; }
+    else ctx.lineTo(toX(i), toY(v));
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // MA5
+  ctx.strokeStyle = '#e74c3c';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  started = false;
+  for(let i=0; i<data.length; i++){
+    const v = ma5[i];
+    if(v == null){ started = false; continue; }
+    if(!started){ ctx.moveTo(toX(i), toY(v)); started = true; }
+    else ctx.lineTo(toX(i), toY(v));
+  }
+  ctx.stroke();
+
+  // Candlesticks
+  const candleW = Math.max(1, (chartW / data.length) * 0.6);
+  for(let i=0; i<data.length; i++){
+    const d = data[i];
+    if(d.open == null || d.close == null) continue;
+    const x = toX(i) - candleW/2;
+    const openY = toY(d.open);
+    const closeY = toY(d.close);
+    const highY = toY(d.high || d.close);
+    const lowY = toY(d.low || d.close);
+    const isGreen = d.close >= d.open;
+    ctx.fillStyle = isGreen ? '#e74c3c' : '#16833a';
+    ctx.strokeStyle = isGreen ? '#e74c3c' : '#16833a';
+    ctx.lineWidth = 1;
+    // wick
+    ctx.beginPath(); ctx.moveTo(toX(i), highY); ctx.lineTo(toX(i), lowY); ctx.stroke();
+    // body
+    const bodyY = Math.min(openY, closeY);
+    const bodyH = Math.max(1, Math.abs(closeY - openY));
+    ctx.fillRect(x, bodyY, candleW, bodyH);
+  }
 }
 
 // ====== Init ======
@@ -863,4 +1090,17 @@ document.getElementById('sectorFlowToggle').addEventListener('click', () => {
 
 updateFilterBadge();
 loadData();
+
+// Row click → detail panel
+document.getElementById('tbody').addEventListener('click', (e) => {
+  const tr = e.target.closest('tr');
+  if(!tr || !tr.dataset.code) return;
+  const code = tr.dataset.code;
+  const d = allData.find(x => x['代码'] === code);
+  if(!d) return;
+  openDetail(code, d['名称']);
+  // Close mobile filter/col panels if open
+  document.getElementById('filterPanel').classList.remove('open');
+  document.getElementById('colPanel').style.display = 'none';
+});
 setInterval(loadData, 300000);
