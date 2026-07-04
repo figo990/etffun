@@ -14,3 +14,5 @@ start.bat
 server.log
 server.err
 docs/
+data
+wsgi.py
