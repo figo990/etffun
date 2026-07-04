@@ -78,11 +78,14 @@ def execute_many(sql, params_list):
 
 def _to_records(df):
     df = df.where(pd.notna(df), None)
+    for col in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
+            df[col] = df[col].apply(lambda v: v.strftime('%Y-%m-%d') if pd.notna(v) else None)
     records = df.to_dict('records')
     for row in records:
         for k, v in row.items():
-            if isinstance(v, pd.Timestamp):
-                row[k] = v.strftime('%Y-%m-%d')
-            elif pd.isna(v) if isinstance(v, float) else False:
+            if v is None or v is pd.NaT:
+                row[k] = None
+            elif isinstance(v, float) and pd.isna(v):
                 row[k] = None
     return records
