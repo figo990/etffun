@@ -127,7 +127,7 @@ class IndexMappingTask(BaseTask):
 
     def _execute(self):
         index_list = get_all_index_spot()
-        funds = get_funds_without_mapping(limit=100)
+        funds = get_funds_without_mapping(limit=500)
         if not funds:
             print("[index_mapping] all funds already mapped")
             return 0

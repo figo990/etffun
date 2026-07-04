@@ -36,7 +36,7 @@ def get_all_etf():
                 LAG(price, 1) OVER w AS prev_price_1,
                 LAG(price, 5) OVER w AS prev_price_5,
                 LAG(price, 21) OVER w AS prev_price_21,
-                ROW_NUMBER() OVER (PARTITION BY code ORDER BY date DESC) AS rn
+                ROW_NUMBER() OVER (PARTITION BY code ORDER BY CASE WHEN price IS NOT NULL THEN 0 ELSE 1 END, date DESC) AS rn
             FROM filled
             WINDOW w AS (PARTITION BY code ORDER BY date)
         ),

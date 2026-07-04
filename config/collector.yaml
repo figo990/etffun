@@ -13,7 +13,7 @@ tasks:
     retry: 3
   spot:
     display_name: 实时行情
-    schedule: "*/10 9:30-15:00 * * 1-5"
+    schedule: "*/5 9:30-15:00 * * 1-5"
     enabled: true
     timeout: 60
     retry: 2
@@ -25,7 +25,7 @@ tasks:
     retry: 3
   index_spot:
     display_name: 指数实时行情
-    schedule: "*/10 9:30-15:00 * * 1-5"
+    schedule: "*/5 9:30-15:00 * * 1-5"
     enabled: true
     timeout: 30
     retry: 2
@@ -43,7 +43,7 @@ tasks:
     retry: 2
   northbound:
     display_name: 北向资金流
-    schedule: "0 18 * * 1-5"
+    schedule: "30 17 * * 1-5"
     enabled: true
     timeout: 120
     retry: 3
@@ -89,9 +89,9 @@ tasks:
     enabled: true
     timeout: 120
     retry: 2
-  sync_db:
-    display_name: DB读写同步
-    schedule: "*/2 * * * *"
+  backfill_prices:
+    display_name: 历史价格回填
+    schedule: "0 10 * * 0"
     enabled: true
-    timeout: 60
+    timeout: 600
     retry: 1
