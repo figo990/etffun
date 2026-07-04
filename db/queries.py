@@ -288,12 +288,12 @@ def update_task_status(task_name, status, duration=None, error=None, next_run=No
     execute(sql, [now, status, duration, error, next_run, task_name])
 
 
-def get_task_status_all():
+def get_task_status_all(read_only=True):
     return _to_records(query("""
         SELECT task_name, display_name, schedule_cron, enabled,
                last_run_at, last_status, last_duration, last_error, next_run_at
         FROM task_status ORDER BY task_name
-    """))
+    """, read_only=read_only))
 
 
 def toggle_task_enabled(task_name):
@@ -338,14 +338,14 @@ def consume_task_triggers(max_retries=5, retry_delay=2):
             raise
 
 
-def get_task_history(task_name, limit=20):
+def get_task_history(task_name, limit=20, read_only=True):
     return _to_records(query("""
         SELECT run_at AS last_run_at, status AS last_status,
                duration AS last_duration, error AS last_error, records_count
         FROM task_history
         WHERE task_name = ?
         ORDER BY run_at DESC LIMIT ?
-    """, [task_name, limit]))
+    """, [task_name, limit], read_only=read_only))
 
 
 def insert_task_history(task_name, status, duration=None, error=None, records_count=None):

@@ -46,11 +46,11 @@ def get_conn(read_only=False):
     return duckdb.connect(path, read_only=read_only)
 
 
-def query(sql, params=None, max_retries=20, retry_delay=1):
+def query(sql, params=None, max_retries=20, retry_delay=1, read_only=True):
     for attempt in range(max_retries):
         conn = None
         try:
-            conn = get_conn(read_only=True)
+            conn = get_conn(read_only=read_only)
             if params:
                 result = conn.execute(sql, params).fetchdf()
             else:

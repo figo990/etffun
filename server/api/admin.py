@@ -1,6 +1,5 @@
 from flask import Blueprint, jsonify, request
 from db import get_task_status_all, write_task_trigger, get_task_history, safe_error
-from ..cache import cache
 
 admin_api = Blueprint('admin_api', __name__)
 
@@ -20,7 +19,7 @@ def list_tasks():
     if request.headers.get('X-Admin-Token') != ADMIN_PASSWORD:
         return jsonify({'error': '未授权'}), 401
     try:
-        data = cache.get_tasks(force=request.args.get('force') == '1')
+        data = get_task_status_all(read_only=False)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': safe_error(e)}), 500
@@ -55,7 +54,7 @@ def task_history(name):
         return jsonify({'error': '未授权'}), 401
     try:
         limit = request.args.get('limit', 20, type=int)
-        data = get_task_history(name, limit)
+        data = get_task_history(name, limit, read_only=False)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': safe_error(e)}), 500

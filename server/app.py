@@ -34,12 +34,12 @@ def create_app():
     cfg = load_config()
     cache.configure((cfg.get('cache') or {}).get('ttl_seconds', 30))
 
-    # Ensure read replica exists
-    ensure_read_db()
-
-    # Ensure DB schema exists
+    # Ensure DB schema exists first (before copying to read replica)
     from db.schema import init_db
     init_db()
+
+    # Then ensure read replica exists
+    ensure_read_db()
 
     app = Flask(__name__,
                 static_folder=os.path.join(BASE_DIR, 'public'),
