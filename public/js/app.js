@@ -1174,6 +1174,13 @@ document.getElementById('filterToggleBtn').addEventListener('click', (e) => {
   const isOpen = panel.classList.toggle('open');
   if (isOpen) renderFilterPanel();
   document.getElementById('colPanel').style.display = 'none';
+  document.getElementById('qrPanel').classList.remove('open');
+});
+document.getElementById('qrBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  document.getElementById('qrPanel').classList.toggle('open');
+  document.getElementById('filterPanel').classList.remove('open');
+  document.getElementById('colPanel').style.display = 'none';
 });
 document.addEventListener('click', (e) => {
   const panel = document.getElementById('filterPanel');
@@ -1183,6 +1190,10 @@ document.addEventListener('click', (e) => {
   const colPanel = document.getElementById('colPanel');
   if (colPanel.style.display === 'block' && !e.target.closest('.col-wrap') && !e.target.closest('.fp-wrap')) {
     colPanel.style.display = 'none';
+  }
+  const qrPanel = document.getElementById('qrPanel');
+  if (qrPanel.classList.contains('open') && !e.target.closest('.qr-wrap')) {
+    qrPanel.classList.remove('open');
   }
 });
 document.getElementById('filterPanel').addEventListener('click', (e) => {

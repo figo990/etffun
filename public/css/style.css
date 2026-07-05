@@ -71,6 +71,18 @@ tbody tr:hover td{background:#fff6e5}
 .col-item:hover{background:#f0faf8;color:#00b894}
 .col-item input{margin-right:6px;accent-color:#00b894}
 
+/* QR contact button */
+.qr-wrap{position:relative;display:inline-flex}
+.qr-panel{display:none;position:absolute;top:100%;right:0;z-index:100;background:#fff;border:1px solid #cbd5e0;border-radius:4px;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,.18);margin-top:4px}
+.qr-panel img{width:120px;height:120px;display:block}
+.qr-panel.open{display:block}
+.btn-qr{color:#a0aec0}
+.btn-qr:hover{border-color:#a0aec0;color:#e2e8f0}
+@media(max-width:900px){
+  .qr-panel{position:fixed;top:auto;bottom:80px;right:10px;margin-top:0;width:140px}
+  .qr-panel img{width:140px;height:140px}
+}
+
 /* Filter button wrapper */
 .fp-wrap{position:relative;display:inline-flex}
 
