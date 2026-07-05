@@ -1327,8 +1327,11 @@ def _share_changes(code, share_date, baseline=None):
     for label, offset in offsets:
         if len(past_dates) >= offset:
             prev_date = past_dates[offset - 1]
-            prev_row = query_one("SELECT total_shares FROM daily_snapshot WHERE code=? AND date=?",
-                                 [str(code), _nullable_norm_date(prev_date)])
+            prev_row = query_one("""
+                SELECT total_shares FROM daily_snapshot
+                WHERE code=? AND total_shares IS NOT NULL AND date <= ? AND date >= ?::DATE - INTERVAL '10 days'
+                ORDER BY date DESC LIMIT 1
+            """, [str(code), _nullable_norm_date(prev_date), _nullable_norm_date(prev_date)])
             prev_shares = prev_row['total_shares'] if prev_row else None
             if prev_shares and prev_shares > 0:
                 delta = cur_shares - prev_shares
