@@ -95,3 +95,21 @@ tasks:
     enabled: true
     timeout: 60
     retry: 1
+  huijin_audit:
+    display_name: 汇金数据审计
+    schedule: "15 18 * * 1-5"
+    enabled: true
+    timeout: 120
+    retry: 1
+  cffex_position_rank:
+    display_name: 中金所持仓排名
+    schedule: "30 18 * * 1-5"
+    enabled: true
+    timeout: 120
+    retry: 2
+  market_calendar:
+    display_name: 交易日历
+    schedule: "0 9 * * 1"
+    enabled: true
+    timeout: 120
+    retry: 2

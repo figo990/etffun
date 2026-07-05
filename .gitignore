@@ -12,6 +12,9 @@ deploy/
 start.bat
 server.log
 server.err
-docs/
+docs/*
+!docs/
+!docs/huijin-watch-requirements.md
+!docs/huijin-baseline-verification-checklist.md
 data
 wsgi.py

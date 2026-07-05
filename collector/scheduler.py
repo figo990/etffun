@@ -21,6 +21,9 @@ from .tasks.index_valuation import IndexValuationTask
 from .tasks.bond_yield import BondYieldTask
 from .tasks.margin_detail import MarginDetailTask
 from .tasks.sync_db import SyncDbTask
+from .tasks.huijin_audit import HuijinAuditTask
+from .tasks.cffex_position_rank import CffexPositionRankTask
+from .tasks.market_calendar import MarketCalendarTask
 from db import init_task_status, write_task_trigger, consume_task_triggers, init_db
 
 TASK_CLASSES = {
@@ -40,6 +43,9 @@ TASK_CLASSES = {
     'bond_yield': BondYieldTask,
     'margin_detail': MarginDetailTask,
     'sync_db': SyncDbTask,
+    'huijin_audit': HuijinAuditTask,
+    'cffex_position_rank': CffexPositionRankTask,
+    'market_calendar': MarketCalendarTask,
 }
 
 

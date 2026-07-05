@@ -19,7 +19,20 @@ from .queries import (
     upsert_index_valuation, query_latest_index_valuation,
     upsert_bond_yield, query_latest_bond_yield,
     upsert_margin_detail, query_latest_margin,
-    get_all_codes,
+    get_all_codes, audit_huijin_data,
+    upsert_huijin_baseline, replace_huijin_baseline_holders,
+    get_huijin_baseline, get_huijin_baselines, get_active_huijin_baseline,
+    get_huijin_baseline_holders, seed_huijin_baselines_from_config,
+    bootstrap_huijin_support_data,
+    seed_market_calendar, seed_market_calendar_from_trading_dates,
+    upsert_market_calendar, infer_trading_date, is_trading_day,
+    create_data_source_run, finish_data_source_run,
+    upsert_daily_snapshot_audit, get_daily_snapshot_audit, backfill_huijin_daily_snapshot_audit,
+    upsert_data_quality_issues, get_data_quality_issues, refresh_huijin_data_quality_issues,
+    upsert_fund_share_events, get_fund_share_events,
+    seed_huijin_watch_groups, get_huijin_watch_groups,
+    upsert_cffex_position_rank, get_cffex_position_rank,
+    get_huijin_overview, get_huijin_series,
 )
 from .schema import init_db
-from .sync import sync_all_tables
+from .sync import sync_all_tables, sync_tables

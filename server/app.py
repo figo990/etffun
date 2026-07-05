@@ -38,6 +38,12 @@ def create_app():
     from db.schema import init_db
     init_db()
 
+    try:
+        from db import bootstrap_huijin_support_data
+        bootstrap_huijin_support_data(refresh_issues=False, sync_read=True)
+    except Exception as e:
+        print(f"[app] huijin bootstrap skipped: {e}")
+
     # Then ensure read replica exists
     ensure_read_db()
 
@@ -50,10 +56,12 @@ def create_app():
     from .api.etf import etf_api
     from .api.stats import stats_api
     from .api.admin import admin_api
+    from .api.huijin import huijin_api
 
     app.register_blueprint(etf_api)
     app.register_blueprint(stats_api)
     app.register_blueprint(admin_api)
+    app.register_blueprint(huijin_api)
 
     @app.route('/')
     def index():

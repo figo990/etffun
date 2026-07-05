@@ -212,5 +212,138 @@ def init_db():
                 PRIMARY KEY (date, code)
             )
         """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS huijin_baseline (
+                baseline_id         VARCHAR PRIMARY KEY,
+                code                VARCHAR NOT NULL,
+                name                VARCHAR,
+                report_period       VARCHAR,
+                report_date         DATE,
+                disclosure_date     DATE,
+                s0_total_shares     DOUBLE,
+                h0_total_shares     DOUBLE,
+                a_ratio             DOUBLE,
+                source_doc_title    VARCHAR,
+                source_doc_url      TEXT,
+                source_doc_hash     VARCHAR,
+                source_page         VARCHAR,
+                verification_status VARCHAR DEFAULT 'draft',
+                verified_at         TIMESTAMP,
+                is_active           BOOLEAN DEFAULT FALSE,
+                CHECK (s0_total_shares IS NULL OR s0_total_shares > 0),
+                CHECK (h0_total_shares IS NULL OR h0_total_shares >= 0),
+                CHECK (a_ratio IS NULL OR (a_ratio >= 0 AND a_ratio <= 1)),
+                CHECK (verification_status IN ('draft', 'verified', 'rejected'))
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS huijin_baseline_holder (
+                baseline_id   VARCHAR NOT NULL,
+                holder_name   VARCHAR NOT NULL,
+                holder_group  VARCHAR,
+                holder_shares DOUBLE,
+                holder_ratio  DOUBLE,
+                source_line   TEXT,
+                CHECK (holder_shares IS NULL OR holder_shares >= 0),
+                CHECK (holder_ratio IS NULL OR (holder_ratio >= 0 AND holder_ratio <= 1))
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS daily_snapshot_audit (
+                date                    DATE NOT NULL,
+                code                    VARCHAR NOT NULL,
+                source_name             VARCHAR NOT NULL,
+                source_url              TEXT,
+                source_date             DATE,
+                source_date_inferred    BOOLEAN DEFAULT FALSE,
+                raw_total_shares        DOUBLE,
+                raw_unit                VARCHAR,
+                normalized_total_shares DOUBLE,
+                run_id                  VARCHAR,
+                quality_flags           VARCHAR,
+                PRIMARY KEY (date, code, source_name)
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS market_calendar (
+                exchange         VARCHAR NOT NULL,
+                date             DATE NOT NULL,
+                is_trading_day   BOOLEAN DEFAULT FALSE,
+                prev_trading_day DATE,
+                PRIMARY KEY (exchange, date)
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS data_source_run (
+                run_id        VARCHAR PRIMARY KEY,
+                task_name     VARCHAR,
+                source_name   VARCHAR,
+                started_at    TIMESTAMP,
+                finished_at   TIMESTAMP,
+                status        VARCHAR,
+                records_count INTEGER,
+                error         TEXT,
+                CHECK (status IS NULL OR status IN ('running', 'success', 'failed', 'partial'))
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS data_quality_issue (
+                issue_id   VARCHAR PRIMARY KEY,
+                code       VARCHAR,
+                date       DATE,
+                issue_type VARCHAR,
+                severity   VARCHAR,
+                status     VARCHAR DEFAULT 'open',
+                message    TEXT,
+                created_at TIMESTAMP,
+                CHECK (severity IS NULL OR severity IN ('blocker', 'warning', 'info')),
+                CHECK (status IS NULL OR status IN ('open', 'resolved', 'ignored'))
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS fund_share_event (
+                event_id          VARCHAR PRIMARY KEY,
+                code              VARCHAR NOT NULL,
+                event_date        DATE,
+                event_type        VARCHAR,
+                adjustment_factor DOUBLE,
+                source_title      VARCHAR,
+                source_url        TEXT,
+                is_resolved       BOOLEAN DEFAULT FALSE,
+                message           TEXT
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS huijin_watch_group (
+                group_name VARCHAR NOT NULL,
+                code       VARCHAR NOT NULL,
+                index_name VARCHAR,
+                is_active  BOOLEAN DEFAULT TRUE,
+                PRIMARY KEY (group_name, code)
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS cffex_position_rank (
+                date        DATE NOT NULL,
+                contract    VARCHAR NOT NULL,
+                rank_type   VARCHAR NOT NULL,
+                rank_no     INTEGER,
+                member_name VARCHAR,
+                volume      DOUBLE,
+                change      DOUBLE,
+                source_name VARCHAR,
+                run_id      VARCHAR,
+                PRIMARY KEY (date, contract, rank_type, rank_no, member_name)
+            )
+        """)
     finally:
         conn.close()

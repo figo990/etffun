@@ -18,6 +18,22 @@ def sync_all_tables():
         print("[sync] write DB not found, skipping")
         return 0
 
+    tables = None
+    return _sync_tables(write_path, read_path, tables)
+
+
+def sync_tables(table_names):
+    write_path, read_path = get_db_paths()
+    if not os.path.exists(write_path):
+        print("[sync] write DB not found, skipping")
+        return 0
+    tables = [str(t) for t in (table_names or []) if str(t).strip()]
+    if not tables:
+        return 0
+    return _sync_tables(write_path, read_path, tables)
+
+
+def _sync_tables(write_path, read_path, table_names=None):
     try:
         read_conn = duckdb.connect(read_path)
         read_conn.execute(f"ATTACH '{write_path}' AS write_db (READ_ONLY)")
@@ -26,10 +42,13 @@ def sync_all_tables():
         return 0
 
     try:
-        tables = [r[0] for r in read_conn.execute(
-            "SELECT table_name FROM information_schema.tables "
-            "WHERE table_catalog='write_db' AND table_schema='main' AND table_type='BASE TABLE'"
-        ).fetchall()]
+        if table_names is None:
+            tables = [r[0] for r in read_conn.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_catalog='write_db' AND table_schema='main' AND table_type='BASE TABLE'"
+            ).fetchall()]
+        else:
+            tables = table_names
 
         count = 0
         for table in tables:
