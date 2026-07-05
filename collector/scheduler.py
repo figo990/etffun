@@ -104,7 +104,16 @@ def build_scheduler():
             'enabled': tc.get('enabled', True),
         }
 
-    init_task_status(task_meta)
+    # Retry init_task_status in case web server holds the DB write lock
+    for attempt in range(30):
+        try:
+            init_task_status(task_meta)
+            break
+        except Exception as e:
+            if attempt == 29:
+                print(f"[scheduler] init_task_status failed after 30 retries: {e}")
+            else:
+                time.sleep(1)
 
     scheduler = BackgroundScheduler()
 
