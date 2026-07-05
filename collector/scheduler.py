@@ -24,7 +24,7 @@ from .tasks.sync_db import SyncDbTask
 from .tasks.huijin_audit import HuijinAuditTask
 from .tasks.cffex_position_rank import CffexPositionRankTask
 from .tasks.market_calendar import MarketCalendarTask
-from db import init_task_status, write_task_trigger, consume_task_triggers, init_db
+from db import init_task_status, write_task_trigger, consume_task_triggers
 
 TASK_CLASSES = {
     'shares_sse': SharesSSETask,
@@ -104,7 +104,6 @@ def build_scheduler():
             'enabled': tc.get('enabled', True),
         }
 
-    init_db()
     init_task_status(task_meta)
 
     scheduler = BackgroundScheduler()
