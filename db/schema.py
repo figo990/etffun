@@ -164,12 +164,13 @@ def init_db():
             CREATE TABLE IF NOT EXISTS sector_fund_flow (
                 date            DATE NOT NULL,
                 sector_name     VARCHAR NOT NULL,
+                period          VARCHAR NOT NULL DEFAULT '1d',
                 net_main        DOUBLE,
                 net_super_large DOUBLE,
                 net_large       DOUBLE,
                 net_medium      DOUBLE,
                 net_small       DOUBLE,
-                PRIMARY KEY (date, sector_name)
+                PRIMARY KEY (date, sector_name, period)
             )
         """)
 

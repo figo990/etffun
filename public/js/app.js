@@ -813,37 +813,105 @@ async function loadBondYield(){
   }catch(e){}
 }
 
+let _sfData = [];
+let _sfPeriod = '1d';
+let _sfSortCol = 'net_main';
+let _sfSortDir = 'desc';
+
 async function loadSectorFlow(){
+  await _sfLoad(_sfPeriod);
+}
+
+async function _sfLoad(period){
   try{
-    const r=await fetch('/api/etf/sector-flow');
+    const r=await fetch('/api/etf/sector-flow?period='+period);
     const d=await r.json();
     if(!d || !d.length) return;
+    _sfData = d;
+    _sfPeriod = period;
     const panel = document.getElementById('sectorFlowPanel');
     panel.style.display = '';
     const body = document.getElementById('sectorFlowBody');
-    let html = '<table class="sf-table"><tr><th>行业</th><th>主力净流入</th><th>超大单</th><th>大单</th><th>中单</th><th>小单</th></tr>';
-    d.forEach(s => {
-      const nm = Number(s.net_main || 0);
-      const cls = nm >= 0 ? 'pos' : 'neg';
-      html += `<tr class="sf-row" data-sector="${escHtml(s.sector_name)}">
-        <td class="sf-name">${escHtml(s.sector_name)}</td>
-        <td class="sf-num ${cls}">${fmtNum(nm)}</td>
-        <td class="sf-num">${fmtNum(s.net_super_large)}</td>
-        <td class="sf-num">${fmtNum(s.net_large)}</td>
-        <td class="sf-num">${fmtNum(s.net_medium)}</td>
-        <td class="sf-num">${fmtNum(s.net_small)}</td>
-      </tr>`;
-    });
-    html += '</table>';
-    body.innerHTML = html;
-    document.querySelectorAll('.sf-row').forEach(row => {
-      row.addEventListener('click', () => {
-        const sector = row.dataset.sector;
-        applySectorFilter(sector);
-      });
-    });
+    body.style.display = '';
+    _sfRender();
   }catch(e){}
 }
+
+function _sfRender(){
+  const wrap = document.getElementById('sfTableWrap');
+  if(!_sfData.length){ wrap.innerHTML='<div class="sf-empty">暂无数据</div>'; return; }
+
+  const maxAbs = Math.max(..._sfData.map(s => Math.abs(Number(s[_sfSortCol] || 0))), 1);
+  const sorted = [..._sfData].sort((a,b) => {
+    const va = Number(a[_sfSortCol] || 0);
+    const vb = Number(b[_sfSortCol] || 0);
+    return _sfSortDir === 'desc' ? vb - va : va - vb;
+  });
+
+  const cols = [
+    {key:'sector_name', label:'行业',      align:'left'},
+    {key:'net_main',    label:'主力净流入', align:'right'},
+    {key:'net_super_large', label:'超大单', align:'right'},
+    {key:'net_large',   label:'大单',      align:'right'},
+    {key:'net_medium',  label:'中单',      align:'right'},
+    {key:'net_small',   label:'小单',      align:'right'},
+  ];
+
+  let html = '<table class="sf-table"><tr>';
+  cols.forEach(c => {
+    const active = c.key === _sfSortCol;
+    const arrow = active ? (_sfSortDir === 'desc' ? ' ▼' : ' ▲') : '';
+    html += `<th class="sf-th" data-key="${c.key}" style="text-align:${c.align}">${c.label}${arrow}</th>`;
+  });
+  html += '</tr>';
+
+  sorted.forEach(s => {
+    const nm = Number(s.net_main || 0);
+    const cls = nm >= 0 ? 'pos' : 'neg';
+    const pct = maxAbs > 0 ? Math.abs(nm) / maxAbs : 0;
+    const barDir = nm >= 0 ? 'right' : 'left';
+    html += `<tr class="sf-row" data-sector="${escHtml(s.sector_name)}">
+      <td class="sf-name">${escHtml(s.sector_name)}</td>
+      <td class="sf-num ${cls}">
+        <div class="sf-bar-wrap">
+          <div class="sf-bar sf-bar-${barDir}" style="width:${(pct*100).toFixed(0)}%"></div>
+          <span class="sf-bar-val">${fmtNum(nm)}</span>
+        </div>
+      </td>
+      <td class="sf-num">${fmtNum(s.net_super_large)}</td>
+      <td class="sf-num">${fmtNum(s.net_large)}</td>
+      <td class="sf-num">${fmtNum(s.net_medium)}</td>
+      <td class="sf-num">${fmtNum(s.net_small)}</td>
+    </tr>`;
+  });
+  html += '</table>';
+  wrap.innerHTML = html;
+
+  document.querySelectorAll('.sf-th').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.key;
+      if(key === _sfSortCol) _sfSortDir = _sfSortDir === 'desc' ? 'asc' : 'desc';
+      else { _sfSortCol = key; _sfSortDir = 'desc'; }
+      _sfRender();
+    });
+  });
+  document.querySelectorAll('.sf-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const sector = row.dataset.sector;
+      applySectorFilter(sector);
+    });
+  });
+}
+
+document.getElementById('sfTabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('.sf-tab');
+  if(!tab) return;
+  document.querySelectorAll('.sf-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  _sfSortCol = 'net_main';
+  _sfSortDir = 'desc';
+  _sfLoad(tab.dataset.period);
+});
 
 function escHtml(s){
   if(!s) return '';

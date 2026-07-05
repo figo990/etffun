@@ -185,19 +185,34 @@ tbody tr:hover td{background:#fff6e5}
 .sector-flow-header{padding:6px 10px;font-size:13px;font-weight:600;color:#00b894;cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px}
 .sector-flow-header:hover{background:#e2e8f0}
 .sf-arrow{font-size:12px;color:#a0aec0}
+.sf-tabs{display:flex;gap:0;border-bottom:1px solid #e2e8f0;background:#edf2f7}
+.sf-tab{padding:4px 14px;font-size:12px;cursor:pointer;color:#718096;border-bottom:2px solid transparent;user-select:none;transition:all .12s}
+.sf-tab:hover{color:#2d3436;background:#e2e8f0}
+.sf-tab.active{color:#00b894;border-bottom-color:#00b894;background:#fff;font-weight:600}
+.sf-table-wrap{overflow-x:auto}
 .sf-table{width:100%;border-collapse:collapse;font-size:12px}
-.sf-table th{position:static;height:auto;background:#e2e8f0;padding:4px 6px;text-align:right;font-weight:600;font-size:11px;border:1px solid #cbd5e0}
+.sf-table th{position:static;height:auto;background:#e2e8f0;padding:4px 6px;text-align:right;font-weight:600;font-size:11px;border:1px solid #cbd5e0;cursor:pointer;user-select:none;white-space:nowrap}
 .sf-table th:first-child{text-align:left}
+.sf-table th:hover{background:#d2d8e0}
 .sf-table td{padding:3px 6px;border:1px solid #e2e8f0;height:auto;background:transparent}
 .sf-name{font-weight:600;color:#2d3436;white-space:nowrap}
-.sf-num{text-align:right;font-family:Arial,Consolas,monospace;font-variant-numeric:tabular-nums}
+.sf-num{text-align:right;font-family:Arial,Consolas,monospace;font-variant-numeric:tabular-nums;position:relative}
 .sf-row{cursor:pointer}
 .sf-row:hover td{background:#e6fffa}
+.sf-bar-wrap{position:relative;display:flex;align-items:center;justify-content:flex-end;min-height:18px}
+.sf-bar{position:absolute;height:14px;border-radius:2px;opacity:.15;top:50%;transform:translateY(-50%)}
+.sf-bar-right{right:0;background:#d94b45}
+.pos .sf-bar-right{background:#d94b45}
+.sf-bar-left{left:0;background:#16833a}
+.neg .sf-bar-left{background:#16833a}
+.sf-bar-val{position:relative;z-index:1;padding:0 2px}
+.sf-empty{padding:10px;text-align:center;color:#a0aec0;font-size:12px}
 
 @media(max-width:900px){
   .sector-flow{margin:4px 6px 0}
   .sf-table td{padding:3px 4px;font-size:11px}
   .sf-table th{font-size:10px;padding:2px 4px}
+  .sf-tab{padding:3px 10px;font-size:11px}
 }
 
 /* Code column clickable */

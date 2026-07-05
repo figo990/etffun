@@ -38,8 +38,9 @@ def get_kline():
 
 @etf_api.route('/api/etf/sector-flow')
 def get_sector_flow():
+    period = request.args.get('period', '1d')
     try:
-        data = query_latest_sector_flow()
+        data = query_latest_sector_flow(period=period)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': safe_error(e)}), 500

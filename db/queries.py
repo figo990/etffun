@@ -573,30 +573,50 @@ def get_codes_with_kline():
 
 # ─── sector_fund_flow ─────────────────────────────────────────
 
-def upsert_sector_fund_flow(records):
+def upsert_sector_fund_flow(records, period='1d'):
     if not records:
         return
     sql = """
-        INSERT INTO sector_fund_flow (date, sector_name, net_main, net_super_large, net_large, net_medium, net_small)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (date, sector_name) DO UPDATE SET
+        INSERT INTO sector_fund_flow (date, sector_name, period, net_main, net_super_large, net_large, net_medium, net_small)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (date, sector_name, period) DO UPDATE SET
             net_main        = COALESCE(EXCLUDED.net_main,        sector_fund_flow.net_main),
             net_super_large = COALESCE(EXCLUDED.net_super_large, sector_fund_flow.net_super_large),
             net_large       = COALESCE(EXCLUDED.net_large,       sector_fund_flow.net_large),
             net_medium      = COALESCE(EXCLUDED.net_medium,      sector_fund_flow.net_medium),
             net_small       = COALESCE(EXCLUDED.net_small,       sector_fund_flow.net_small)
     """
-    rows = [(d, s, nm, nsl, nl, nmd, ns) for d, s, nm, nsl, nl, nmd, ns in records]
+    rows = [(d, s, period, nm, nsl, nl, nmd, ns) for d, s, nm, nsl, nl, nmd, ns in records]
     execute_many(sql, rows)
 
 
-def query_latest_sector_flow():
+def query_latest_sector_flow(period='1d'):
     try:
-        return _to_records(query("""
-            SELECT sector_name, net_main, net_super_large, net_large, net_medium, net_small
+        if period == '1d':
+            return _to_records(query("""
+                SELECT sector_name, net_main, net_super_large, net_large, net_medium, net_small
+                FROM sector_fund_flow
+                WHERE period = '1d' AND date = (SELECT MAX(date) FROM sector_fund_flow WHERE period = '1d')
+                ORDER BY net_main DESC
+            """))
+        # Aggregation from daily data
+        ndays = {'3d': 3, '5d': 5, '10d': 10, '20d': 20}.get(period, 3)
+        return _to_records(query(f"""
+            WITH recent AS (
+                SELECT DISTINCT date FROM sector_fund_flow
+                WHERE period = '1d' ORDER BY date DESC LIMIT {ndays}
+            )
+            SELECT
+                sector_name,
+                SUM(net_main) AS net_main,
+                SUM(net_super_large) AS net_super_large,
+                SUM(net_large) AS net_large,
+                SUM(net_medium) AS net_medium,
+                SUM(net_small) AS net_small
             FROM sector_fund_flow
-            WHERE date = (SELECT MAX(date) FROM sector_fund_flow)
-            ORDER BY ABS(net_main) DESC
+            WHERE period = '1d' AND date IN (SELECT date FROM recent)
+            GROUP BY sector_name
+            ORDER BY net_main DESC
         """))
     except Exception:
         return []

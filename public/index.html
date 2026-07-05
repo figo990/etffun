@@ -35,7 +35,16 @@
 </div>
 <div class="sector-flow" id="sectorFlowPanel" style="display:none">
   <div class="sector-flow-header" id="sectorFlowToggle">行业资金流向 <span class="sf-arrow">▸</span></div>
-  <div class="sector-flow-body" id="sectorFlowBody" style="display:none"></div>
+  <div class="sector-flow-body" id="sectorFlowBody" style="display:none">
+    <div class="sf-tabs" id="sfTabs">
+      <span class="sf-tab active" data-period="1d">即时</span>
+      <span class="sf-tab" data-period="3d">3日</span>
+      <span class="sf-tab" data-period="5d">5日</span>
+      <span class="sf-tab" data-period="10d">10日</span>
+      <span class="sf-tab" data-period="20d">20日</span>
+    </div>
+    <div class="sf-table-wrap" id="sfTableWrap"></div>
+  </div>
 </div>
 <main class="table-section">
   <div class="table-wrap"><table>
