@@ -71,6 +71,10 @@ def create_app():
     def js(filename):
         return send_from_directory(os.path.join(BASE_DIR, 'public', 'js'), filename)
 
+    @app.route('/images/<path:filename>')
+    def images(filename):
+        return send_from_directory(os.path.join(BASE_DIR, 'public', 'images'), filename)
+
     return app
 
 
