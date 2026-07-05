@@ -2,6 +2,7 @@
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 os.environ['ETF_DB_PATH'] = os.path.join(os.path.dirname(__file__), '..', 'data', 'test_verify.duckdb')
+os.environ['ETF_READ_DB_PATH'] = os.environ['ETF_DB_PATH']
 
 errors = []
 def check(label, ok, detail=''):

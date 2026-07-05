@@ -227,10 +227,11 @@ td.cell-code{position:relative}
 
 @media(max-width:900px){
   .modal-content{width:100%;max-height:100vh;border-radius:0}
-  .modal-header{border-radius:0;padding:10px 14px}
+  .modal-header{border-radius:0;padding:8px 10px}
   .modal-title{font-size:14px}
-  .modal-body{padding:10px 12px}
-  #klineCanvas{height:280px}
+  .modal-body{padding:6px 8px}
+  .detail-chart-wrap{padding:4px;margin-bottom:8px;overflow:hidden}
+  #klineCanvas{height:auto;display:block}
   .detail-meta{gap:4px;font-size:11px}
-  .detail-meta .dm-item{padding:2px 6px}
+  .detail-meta .dm-item{padding:2px 5px}
 }

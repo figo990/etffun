@@ -990,8 +990,9 @@ function renderKlineChart(data){
   const canvas = document.getElementById('klineCanvas');
   const rect = canvas.parentElement.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
-  const w = Math.max(400, rect.width - 2);
-  const h = 360;
+  const isMobile = window.innerWidth <= 900;
+  const w = Math.max(280, rect.width - 2);
+  const h = isMobile ? Math.min(280, Math.round(w * 0.6)) : 360;
   canvas.width = w * dpr;
   canvas.height = h * dpr;
   canvas.style.width = w + 'px';

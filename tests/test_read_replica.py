@@ -12,6 +12,7 @@ read_db = os.path.join(test_dir, 'etf_read.duckdb')
 
 # Point to temp dir by setting env var BEFORE importing app
 os.environ['ETF_DB_PATH'] = main_db
+os.environ['ETF_READ_DB_PATH'] = os.environ['ETF_DB_PATH']
 
 # Step 1: Create main DB with real data (simulate production)
 print('=== Step 1: Create main DB with data ===')
@@ -31,6 +32,7 @@ print(f'  Read replica absent: {not os.path.exists(read_db)}')
 print('\n=== Step 2: Simulate web startup with ETF_DB_PATH ===')
 # Set env var BEFORE importing app (just like wsgi.py does)
 os.environ['ETF_DB_PATH'] = read_db
+os.environ['ETF_READ_DB_PATH'] = os.environ['ETF_DB_PATH']
 
 from server.app import create_app
 app = create_app()
