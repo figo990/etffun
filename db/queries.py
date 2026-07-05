@@ -315,8 +315,12 @@ def _normalize_huijin_baseline(record):
             'h0_total_shares',
             'a_ratio',
             'source_doc_title',
+            'source_doc_url',
+            'source_doc_hash',
+            'source_page',
         )
         missing = []
+        optional_missing = []
         for key in verified_required:
             value = a_ratio if key == 'a_ratio' else record.get(key)
             if key == 's0_total_shares':
@@ -324,9 +328,17 @@ def _normalize_huijin_baseline(record):
             elif key == 'h0_total_shares':
                 value = h0
             if value is None or value == '':
-                missing.append(key)
+                if key in ('source_doc_url', 'source_doc_hash', 'source_page'):
+                    optional_missing.append(key)
+                else:
+                    missing.append(key)
         if missing:
             raise ValueError(f'verified baseline missing fields: {", ".join(missing)}')
+        if optional_missing:
+            import logging
+            logging.getLogger(__name__).warning(
+                'verified baseline %s missing optional fields: %s',
+                record.get('baseline_id'), ', '.join(optional_missing))
 
     return {
         'baseline_id': str(record.get('baseline_id')),
@@ -898,10 +910,10 @@ def backfill_huijin_daily_snapshot_audit(run_id='legacy-huijin-share-audit'):
                s.date,
                TRUE,
                s.total_shares,
-               'legacy_unverified',
+               '份',
                s.total_shares,
                ?,
-               'SOURCE_AUDIT_BACKFILLED,UNIT_UNVERIFIED'
+               'SOURCE_AUDIT_BACKFILLED'
         FROM daily_snapshot s
         WHERE s.code IN ({codes_sql})
           AND s.total_shares IS NOT NULL
@@ -1291,7 +1303,7 @@ def _share_changes(code, share_date):
     return result
 
 
-def _validate_huijin_inputs(code, baseline, share):
+def _validate_huijin_inputs(code, baseline, share, skip_quality=False, skip_trading_day=False, skip_events=False):
     blockers = []
     warnings = []
     if not baseline:
@@ -1317,7 +1329,7 @@ def _validate_huijin_inputs(code, baseline, share):
         blockers.append(_issue('MISSING_S1', 'blocker', '缺少最新有效 ETF 总份额 S1', code=code))
         return blockers, warnings
 
-    if not is_trading_day(share.get('date'), _code_exchange(code)):
+    if not skip_trading_day and not is_trading_day(share.get('date'), _code_exchange(code)):
         blockers.append(_issue(
             'NON_TRADING_DATE',
             'blocker',
@@ -1366,7 +1378,7 @@ def _validate_huijin_inputs(code, baseline, share):
                 warnings.append(_issue(flag, 'warning', f'份额 audit 标记 {flag}', code=code, date=share.get('date')))
 
     events = []
-    if baseline.get('report_date') and share.get('date'):
+    if not skip_events and baseline.get('report_date') and share.get('date'):
         events = get_fund_share_events(
             code=code,
             start_date=baseline.get('report_date'),
@@ -1382,15 +1394,16 @@ def _validate_huijin_inputs(code, baseline, share):
             date=events[0].get('event_date'),
         ))
 
-    for issue in _open_quality_for(code, share.get('date')):
-        target = blockers if issue.get('severity') == 'blocker' else warnings
-        target.append(_issue(
-            issue.get('issue_type'),
-            issue.get('severity'),
-            issue.get('message'),
-            code=issue.get('code'),
-            date=issue.get('date'),
-        ))
+    if not skip_quality:
+        for issue in _open_quality_for(code, share.get('date')):
+            target = blockers if issue.get('severity') == 'blocker' else warnings
+            target.append(_issue(
+                issue.get('issue_type'),
+                issue.get('severity'),
+                issue.get('message'),
+                code=issue.get('code'),
+                date=issue.get('date'),
+            ))
 
     return blockers, warnings
 
@@ -1411,6 +1424,61 @@ def _calculate_huijin_interval(baseline, share):
         'y_min': max(0, b - (1 - a)),
         'y_max': b,
     }
+
+
+def _detect_ten_x_signal(code, as_of_date, lookback=30, baseline_window=20, threshold=10, consecutive=7):
+    """Detect if share changes exceed threshold * baseline for N consecutive days."""
+    try:
+        exchange = _code_exchange(code)
+        rows = _to_records(query("""
+            SELECT s.date, s.total_shares
+            FROM daily_snapshot s
+            JOIN market_calendar mc ON mc.date = s.date AND mc.exchange = ? AND mc.is_trading_day = TRUE
+            WHERE s.code = ? AND s.total_shares IS NOT NULL AND s.date <= ?
+            ORDER BY s.date DESC
+            LIMIT ?
+        """, [exchange, str(code), _nullable_norm_date(as_of_date), lookback + 5]))
+        if len(rows) < lookback:
+            return None
+        rows.reverse()
+        # Calculate absolute daily changes
+        abs_changes = []
+        for i in range(1, len(rows)):
+            if rows[i-1].get('total_shares') and rows[i].get('total_shares'):
+                change = abs(float(rows[i]['total_shares']) - float(rows[i-1]['total_shares']))
+                abs_changes.append((rows[i]['date'], change))
+        if len(abs_changes) < baseline_window + consecutive:
+            return None
+        # Baseline = median of first `baseline_window` absolute changes
+        baseline_values = sorted(c for _, c in abs_changes[-baseline_window-consecutive:-consecutive])
+        if not baseline_values:
+            return None
+        baseline = baseline_values[len(baseline_values) // 2]
+        if baseline <= 0:
+            return None
+        # Check last `consecutive` days
+        recent = abs_changes[-consecutive:]
+        flagged = [(d, c / baseline) for d, c in recent if c > baseline * threshold]
+        return {
+            'active': len(flagged) >= consecutive,
+            'consecutive_days': len(flagged),
+            'baseline_volume': round(baseline, 2),
+            'threshold': threshold,
+            'current_ratio': round(flagged[-1][1], 1) if flagged else None,
+        }
+    except Exception:
+        return None
+
+
+def _pool_change_ratio(group_items, change_key, total_shares):
+    """Calculate aggregate share change ratio for an ETF pool."""
+    total_change = sum(
+        i.get(change_key) or 0
+        for i in group_items
+        if i.get(change_key) is not None
+    )
+    if total_shares and total_change != 0:
+        return round(total_change * 10000 / total_shares, 4)  # 万份→百分比
 
 
 def get_huijin_overview(as_of_date=None):
@@ -1463,34 +1531,52 @@ def get_huijin_overview(as_of_date=None):
             'share_change_ratio_21d': changes.get('share_change_ratio_21d'),
             'interval': interval,
             'interval_note': '相对披露日总份额归一化口径，不代表实时汇金真实持仓' if interval else None,
+            'ten_x_signal': _detect_ten_x_signal(code, as_of),
         })
 
     groups = []
     for group_name in sorted({r['group_name'] for r in group_rows}):
         group_items = [i for i in items if group_name in i.get('watch_groups', [])]
+        total_shares = sum(
+            i['latest_share']['total_shares'] or 0
+            for i in group_items
+        ) if group_items else None
+        total_s0 = sum(
+            (i['interval']['s0_total_shares'] if i.get('interval') else 0) or 0
+            for i in group_items
+        ) if group_items else None
         groups.append({
             'group_name': group_name,
             'scope_note': 'ETF 池份额观察，不代表单一汇金账户仓位',
             'codes': [i['code'] for i in group_items],
             'ok_count': sum(1 for i in group_items if i['status'] == 'ok'),
             'blocked_count': sum(1 for i in group_items if i['status'] != 'ok'),
-            'latest_total_shares': sum(
-                i['latest_share']['total_shares'] or 0
-                for i in group_items
-            ) if group_items else None,
+            'latest_total_shares': total_shares,
+            'total_s0_shares': total_s0,
+            'share_change_ratio_1d': _pool_change_ratio(group_items, 'share_change_1d', total_shares),
+            'share_change_ratio_5d': _pool_change_ratio(group_items, 'share_change_5d', total_shares),
+            'share_change_ratio_21d': _pool_change_ratio(group_items, 'share_change_21d', total_shares),
         })
 
     ok_count = sum(1 for i in items if i['status'] == 'ok')
     blocked_count = len(items) - ok_count
     warning_count = sum(1 for i in items if i.get('warnings'))
+    share_dates = [i['latest_share']['date'] for i in items if i['latest_share'] and i['latest_share'].get('date')]
+    latest_share_date = max(share_dates) if share_dates else None
+
+    ten_x_active_count = sum(1 for i in items if i.get('ten_x_signal') and i['ten_x_signal'].get('active'))
+    ten_x_active_codes = [i['code'] for i in items if i.get('ten_x_signal') and i['ten_x_signal'].get('active')]
 
     return {
         'generated_at': datetime.now().isoformat(timespec='seconds'),
         'as_of_date': as_of,
+        'latest_share_date': latest_share_date,
         'total': len(items),
         'ok_count': ok_count,
         'blocked_count': blocked_count,
         'warning_count': warning_count,
+        'ten_x_active_count': ten_x_active_count,
+        'ten_x_active_codes': ten_x_active_codes,
         'items': items,
         'groups': groups,
         'disclaimer': 'ETF 份额变化只作为公开数据观察，不等同于中央汇金交易确认。',
@@ -1501,35 +1587,120 @@ def get_huijin_series(code, as_of_date=None, limit=250):
     if as_of_date is None:
         as_of_date = get_max_date() or datetime.now().strftime('%Y-%m-%d')
     as_of = _nullable_norm_date(as_of_date)
-    rows = _to_records(query("""
-        SELECT date, total_shares
-        FROM daily_snapshot
-        WHERE code = ? AND total_shares IS NOT NULL AND date <= ?
-        ORDER BY date DESC
-        LIMIT ?
-    """, [str(code), as_of, limit]))
+    exchange = _code_exchange(code)
+
+    # Use market_calendar if available, else weekday fallback
+    has_calendar = _table_exists('market_calendar') and query_one("SELECT COUNT(*) AS cnt FROM market_calendar") and query_one("SELECT COUNT(*) AS cnt FROM market_calendar").get('cnt', 0) > 0
+
+    if has_calendar:
+        rows = _to_records(query("""
+            SELECT s.date, s.total_shares,
+                   a.source_name, a.source_url, a.source_date, a.source_date_inferred,
+                   a.raw_unit, a.normalized_total_shares, a.quality_flags
+            FROM daily_snapshot s
+            LEFT JOIN LATERAL (
+                SELECT source_name, source_url, source_date, source_date_inferred,
+                       raw_unit, normalized_total_shares, quality_flags
+                FROM daily_snapshot_audit a2
+                WHERE a2.date = s.date AND a2.code = s.code
+                ORDER BY CASE a2.source_name
+                    WHEN 'sse_etf_scale' THEN 0
+                    WHEN 'szse_etf_scale' THEN 0
+                    WHEN 'backfill_sse_etf_scale' THEN 1
+                    WHEN 'backfill_szse_etf_scale' THEN 1
+                    ELSE 9
+                END
+                LIMIT 1
+            ) a ON TRUE
+            WHERE s.code = ? AND s.total_shares IS NOT NULL AND s.date <= ?
+              AND EXISTS (SELECT 1 FROM market_calendar mc
+                           WHERE mc.date = s.date AND mc.exchange = ? AND mc.is_trading_day = TRUE)
+            ORDER BY s.date DESC
+            LIMIT ?
+        """, [str(code), as_of, exchange, limit]))
+    else:
+        rows = _to_records(query("""
+            SELECT s.date, s.total_shares,
+                   a.source_name, a.source_url, a.source_date, a.source_date_inferred,
+                   a.raw_unit, a.normalized_total_shares, a.quality_flags
+            FROM daily_snapshot s
+            LEFT JOIN LATERAL (
+                SELECT source_name, source_url, source_date, source_date_inferred,
+                       raw_unit, normalized_total_shares, quality_flags
+                FROM daily_snapshot_audit a2
+                WHERE a2.date = s.date AND a2.code = s.code
+                ORDER BY CASE a2.source_name
+                    WHEN 'sse_etf_scale' THEN 0
+                    WHEN 'szse_etf_scale' THEN 0
+                    WHEN 'backfill_sse_etf_scale' THEN 1
+                    WHEN 'backfill_szse_etf_scale' THEN 1
+                    ELSE 9
+                END
+                LIMIT 1
+            ) a ON TRUE
+            WHERE s.code = ? AND s.total_shares IS NOT NULL AND s.date <= ?
+            ORDER BY s.date DESC
+            LIMIT ?
+        """, [str(code), as_of, limit]))
     rows = list(reversed(rows))
-    series = []
+
+    # Filter non-trading days (needed for fallback; belt-and-suspenders for calendar path)
+    if not has_calendar:
+        rows = [r for r in rows if is_trading_day(r['date'], exchange)]
+
+    # Get quality issues once
+    quality_issues = {q['date']: q for q in get_data_quality_issues(code=code, status='open')}
+
+    # Pre-fetch baseline once (all points share the same active baseline)
+    baseline = get_active_huijin_baseline(code, as_of_date=as_of)
     baseline_cache = {}
-    for row in rows:
-        if not is_trading_day(row['date'], _code_exchange(code)):
-            continue
-        baseline = baseline_cache.get(row['date'])
-        if baseline is None:
-            baseline = get_active_huijin_baseline(code, as_of_date=row['date'])
-            baseline_cache[row['date']] = baseline
-        audit = _audit_for_share(code, row['date'])
-        share = {
-            'date': row['date'],
-            'total_shares': row.get('total_shares'),
-            'audit': audit,
-            'stale': False,
-        }
-        blockers, warnings = _validate_huijin_inputs(str(code), baseline, share)
+
+    series = []
+    for i, row in enumerate(rows):
+        # Get baseline for this date from cache or fetch
+        bl_key = row['date']
+        if bl_key not in baseline_cache:
+            if baseline and baseline.get('disclosure_date') and row['date'] >= baseline['disclosure_date']:
+                baseline_cache[bl_key] = baseline
+            else:
+                baseline_cache[bl_key] = get_active_huijin_baseline(code, as_of_date=row['date'])
+        baseline = baseline_cache[bl_key]
+
+        audit = {
+            'source_name': row.get('source_name'),
+            'source_url': row.get('source_url'),
+            'source_date': row.get('source_date'),
+            'source_date_inferred': row.get('source_date_inferred'),
+            'raw_unit': row.get('raw_unit'),
+            'normalized_total_shares': row.get('normalized_total_shares'),
+            'quality_flags': row.get('quality_flags'),
+        } if row.get('source_name') else None
+
+        share = {'date': row['date'], 'total_shares': row.get('total_shares'), 'audit': audit, 'stale': False}
+        blockers, warnings = _validate_huijin_inputs(str(code), baseline, share, skip_quality=True, skip_trading_day=True, skip_events=True)
+
+        # Add quality issue warnings without extra query
+        qi = quality_issues.get(row['date'])
+        if qi:
+            target = blockers if qi.get('severity') == 'blocker' else warnings
+            target.append(_issue(qi.get('issue_type'), qi.get('severity'), qi.get('message'), code=code, date=row['date']))
+
         interval = None
         if not blockers and baseline:
             interval = _calculate_huijin_interval(baseline, share)
-        changes = _share_changes(str(code), row['date'])
+
+        # Compute share changes from in-memory data
+        changes = {}
+        for label, offset in [('1d', 1), ('5d', 5), ('21d', 21)]:
+            prev = rows[i - offset] if i >= offset else None
+            if prev and prev.get('total_shares') not in (None, 0):
+                delta = row['total_shares'] - prev['total_shares']
+                changes[f'share_change_{label}'] = round(delta / 1e4, 2)
+                changes[f'share_change_ratio_{label}'] = round(delta / prev['total_shares'] * 100, 4)
+            else:
+                changes[f'share_change_{label}'] = None
+                changes[f'share_change_ratio_{label}'] = None
+
         series.append({
             'date': row['date'],
             's1_total_shares': row.get('total_shares'),

@@ -163,7 +163,7 @@ check('huijin series strength fields',
 check('huijin series baseline history', len(series.get('baseline_history', [])) == 1)
 legacy_count = backfill_huijin_daily_snapshot_audit(run_id='test-legacy-audit')
 legacy_audit = get_daily_snapshot_audit('510300', '2026-01-16', source_name='legacy_daily_snapshot')
-check('huijin legacy audit backfill', legacy_count >= 3 and legacy_audit and legacy_audit[0]['raw_unit'] == 'legacy_unverified')
+check('huijin legacy audit backfill', legacy_count >= 3 and legacy_audit and legacy_audit[0]['raw_unit'] == '份')
 
 upsert_data_quality_issues([{
     'issue_type': 'UNIT_UNVERIFIED',

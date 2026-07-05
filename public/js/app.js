@@ -40,7 +40,7 @@ const ALL_COLS = [
   {key:'跟踪指数', label:'跟踪指数', group:'其他', def:true, srt:true, tip:'跟踪的指数名称'},
   {key:'指数涨跌幅', label:'指数涨跌', group:'其他', def:true, srt:true},
   {key:'基金公司', label:'基金公司', group:'其他', def:false, srt:true},
-  {key:'汇金持股_亿', label:'汇金(亿)', group:'其他', def:false, srt:true},
+  {key:'汇金持股_亿', label:'汇金披露(亿份)', group:'其他', def:false, srt:true, tip:'报告期汇金披露持仓份额，非实时'},
   {key:'比汇金改变比', label:'份额强度', group:'其他', def:true, srt:true, tip:'份额改变额÷汇金披露线索份额'},
   {key:'机构持仓占比', label:'机构占比%', group:'机构', def:false, srt:true, tip:'机构投资者持有比例'},
   {key:'融资余额_亿', label:'融资(亿)', group:'两融', def:false, srt:true, tip:'融资余额'},
@@ -851,6 +851,20 @@ async function loadCffexPositionRank(){
   }catch(e){}
 }
 
+// Huijin Watch tab switching
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const isHuijin = tab.dataset.tab === 'huijin';
+    document.getElementById('sectorFlowPanel').style.display = isHuijin ? 'none' : '';
+    document.querySelector('.table-section').style.display = isHuijin ? 'none' : '';
+    document.getElementById('huijinWatchPanel').style.display = isHuijin ? '' : 'none';
+    document.querySelector('.filter-title').style.display = isHuijin ? 'none' : '';
+    document.getElementById('exchangeFilter').closest('label').style.display = isHuijin ? 'none' : '';
+  });
+});
+
 function firstIssueText(item){
   const issues = item.blockers && item.blockers.length ? item.blockers : (item.warnings || []);
   if(!issues.length) return '';
@@ -870,16 +884,20 @@ function renderHuijinDetailMeta(code){
   const source = share.source_name || '待审计';
   const sourceDate = share.source_date || share.date || '';
   const inferred = share.source_date_inferred ? ' 推断' : '';
-  const status = item.can_calculate_interval ? '可计算' : '数据不足/需复核';
+  const status = item.can_calculate_interval ? '已纳入' : '待核验';
   let html = '<span class="dm-item">汇金观察:<b>' + esc(status) + '</b></span>';
   html += '<span class="dm-item">份额日:<b>' + esc(share.date || '--') + '</b></span>';
   html += '<span class="dm-item">来源:<b>' + esc(source + (sourceDate ? ' ' + sourceDate : '') + inferred) + '</b></span>';
   if(item.can_calculate_interval && item.interval){
     html += '<span class="dm-item">归一化区间:<b>' + fmtRatio(item.interval.y_min) + '~' + fmtRatio(item.interval.y_max) + '</b></span>';
     html += '<span class="dm-item">公式:<b>B=S1/S0, Y=max(0,B-(1-A))~B</b></span>';
+    if(item.ten_x_signal && item.ten_x_signal.active){
+      html += '<span class="dm-item">异常信号:<b class="hjw-signal">10倍量持续' + item.ten_x_signal.consecutive_days + '天</b></span>';
+    }
   }else{
     const reason = firstIssueText(item) || '缺少已核验基准或有效份额审计';
-    html += '<span class="dm-item">阻断:<b>' + esc(reason) + '</b></span>';
+    const extra = (code === '510230' || code === '588000') ? '（需基金定报原文确认汇金持股H0）' : '';
+    html += '<span class="dm-item">阻断:<b>' + esc(reason) + extra + '</b></span>';
   }
   return html;
 }
@@ -892,42 +910,85 @@ function renderHuijinWatch(){
   const ok = items.filter(i => i.can_calculate_interval).length;
   const blocked = items.length - ok;
   const inferred = items.filter(i => i.latest_share && i.latest_share.source_date_inferred).length;
+  const as_of = huijinOverview.as_of_date || '';
+  const latest_share_date = huijinOverview.latest_share_date || '';
+  const tenX = huijinOverview.ten_x_active_count || 0;
+  const tenXCodes = huijinOverview.ten_x_active_codes || [];
   const rows = [...items].sort((a,b) => {
     if(a.can_calculate_interval !== b.can_calculate_interval) return a.can_calculate_interval ? -1 : 1;
     return String(a.code).localeCompare(String(b.code));
-  }).slice(0, 12);
+  });
 
   let html = '<div class="hjw-head">';
   html += '<div class="hjw-title">汇金观察</div>';
-  html += `<div class="hjw-summary"><span>可计算 <b>${ok}</b></span><span>需复核 <b>${blocked}</b></span><span>推断源日期 <b>${inferred}</b></span><span>期指辅助 <b>${cffexPositionRank.length}</b></span><span>截至 ${esc(huijinOverview.as_of_date || '')}</span></div>`;
+  html += `<div class="hjw-summary"><span>已纳入 <b>${ok}</b></span><span>待核验 <b>${blocked}</b></span><span>推断源日期 <b>${inferred}</b></span>${tenX ? `<span class="hjw-signal">10倍量信号 <b>${tenX}</b></span>` : ''}<span>有效份额日 <b>${esc(latest_share_date)}</b></span><span>数据截至 ${esc(as_of)}</span></div>`;
   html += '</div>';
-  html += '<div class="hjw-note">相对披露日总份额归一化口径；不是实时汇金持仓，也不是交易确认。</div>';
+
+  // ─── Table 1: 汇金持仓概览 ───
+  html += '<div class="hjt-title"><span class="hjt-dot ok"></span>汇金持仓概览<span class="hjt-note">' + ok + '/' + items.length + ' 可计算，点击代码查看K线+区间趋势</span></div>';
+  html += '<div class="hjw-table-note"><b>字段说明</b>：<b>报告期</b>—汇金持有数据的来源报告（年报/半年报）。<b>披露日</b>—公告日期，此日期前的数据不可用。<b>份额日</b>—ETF总份额S1的最新交易日。<b>状态</b>—已纳入=有verified基准+数据完整，待核验=缺基准或数据质量问题。<b>区间</b>—Y_min~Y_max归一化区间，Y_max=B=S1/S0（当前份额比），Y_min=max(0, B-(1-A))，A=H0/S0（披露日汇金占比）。<b>用法</b>：趋势比单日值重要，持续扩大→买入观察，收窄→减仓观察，稳定/份额下降→观望。持续多日显著增量（约10倍量持续一周）可能是强信号。非实时持仓。</div>';
   html += '<div class="hjw-table-wrap"><table class="hjw-table"><thead><tr><th>代码</th><th>观察组</th><th>报告期</th><th>披露日</th><th>份额日</th><th>状态</th><th>区间/原因</th></tr></thead><tbody>';
   rows.forEach(item => {
     const base = item.baseline || {};
     const share = item.latest_share || {};
     const groups = (item.watch_groups || []).join(' / ');
     const inferredMark = share.source_date_inferred ? '<span class="hjw-warn">推断</span>' : '';
-    const status = item.can_calculate_interval ? '<span class="hjw-ok">可计算</span>' : '<span class="hjw-block">数据不足/需复核</span>';
+    const tenXSignal = item.ten_x_signal && item.ten_x_signal.active;
+    const status = item.can_calculate_interval ? '<span class="hjw-ok">已纳入</span>' : '<span class="hjw-block">待核验</span>';
+    const signalBadge = tenXSignal ? '<span class="hjw-signal-badge">10x</span>' : '';
     let result = esc(firstIssueText(item));
     if(item.can_calculate_interval && item.interval){
       result = `${fmtRatio(item.interval.y_min)} ~ ${fmtRatio(item.interval.y_max)}`;
     }
     html += `<tr>
-      <td><span class="code">${esc(item.code)}</span></td>
+      <td><span class="code clickable" data-code="${esc(item.code)}" data-name="${esc(item.name || '')}">${esc(item.code)}</span></td>
       <td>${groups ? esc(groups) : _na()}</td>
       <td>${base.report_period ? esc(base.report_period) : _na()}</td>
       <td>${base.disclosure_date ? esc(base.disclosure_date) : _na()}</td>
       <td>${share.date ? esc(share.date) : _na()} ${inferredMark}</td>
-      <td>${status}</td>
+      <td>${status} ${signalBadge}</td>
       <td>${result || _na()}</td>
     </tr>`;
   });
   html += '</tbody></table></div>';
+
+  // ─── Table 2: ETF 池份额观察 ───
+  if(huijinOverview.groups && huijinOverview.groups.length){
+    html += '<div class="hjt-title"><span class="hjt-dot ok"></span>ETF池份额观察<span class="hjt-note">按跟踪指数归并，仅含汇金持仓ETF</span></div>';
+    html += '<div class="hjw-table-note"><b>说明</b>：将跟踪同一指数的多只汇金持仓ETF合并观察（如沪深300含510300/159919/510330三只）。<b>总份额</b>—组内所有ETF当前份额之和。<b>日/周/月变化%</b>—合并份额的变化率。合并口径不代表单一汇金账户仓位，仅用于观察同指数ETF的整体份额趋势。</div>';
+    html += '<div class="hjw-table-wrap"><table class="hjw-table hjw-pool-table"><thead><tr><th>观察组</th><th>代码</th><th>总份额(亿)</th><th>日变化%</th><th>周变化%</th><th>月变化%</th></tr></thead><tbody>';
+    huijinOverview.groups.forEach(g => {
+      const codes = (g.codes || []).join(' / ');
+      html += `<tr>
+        <td><b>${esc(g.group_name)}</b></td>
+        <td>${esc(codes)}</td>
+        <td class="hjw-num">${g.latest_total_shares ? (g.latest_total_shares / 1e8).toFixed(2) : _na()}</td>
+        <td class="hjw-num">${g.share_change_ratio_1d != null ? g.share_change_ratio_1d.toFixed(2) + '%' : _na()}</td>
+        <td class="hjw-num">${g.share_change_ratio_5d != null ? g.share_change_ratio_5d.toFixed(2) + '%' : _na()}</td>
+        <td class="hjw-num">${g.share_change_ratio_21d != null ? g.share_change_ratio_21d.toFixed(2) + '%' : _na()}</td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+  }
+
+  // ─── 10x signal detail (compact bar) ───
+  if(tenXCodes.length){
+    html += '<div class="hjw-signal-detail">';
+    tenXCodes.forEach(code => {
+      const item = items.find(i => String(i.code) === String(code));
+      if(item && item.ten_x_signal){
+        const s = item.ten_x_signal;
+        html += `<span class="hjw-signal-item">${esc(code)}: 持续${s.consecutive_days}天, 基准量=${fmtVol(s.baseline_volume)}, 当前倍率=${s.current_ratio}x</span>`;
+      }
+    });
+    html += '</div>';
+  }
+
+  // ─── Table 3: 期指辅助 ───
   if(cffexPositionRank.length){
-    const rankRows = cffexPositionRank.slice(0, 8);
-    html += '<div class="hjw-cffex">';
-    html += '<div class="hjw-subhead"><span>期指辅助</span><span>中金所成交持仓排名，不进入核心公式</span></div>';
+    const rankRows = cffexPositionRank.slice(0, 20);
+    html += '<div class="hjt-title"><span class="hjt-dot ok"></span>期指辅助<span class="hjt-note">中金所排名，不进入核心公式，仅辅助验证</span></div>';
+    html += '<div class="hjw-table-note"><b>说明</b>：中金所股指期货成交持仓排名。<b>持买单量↑ + ETF份额↑</b>→需交叉验证，可能配合。<b>持卖单量异常↑</b>→套保盘增加，风险偏好可能下降。以上不能机械等同于汇金操作。当前展示最新交易日数据，不显示历史趋势。</div>';
     html += '<div class="hjw-table-wrap"><table class="hjw-table hjw-cffex-table"><thead><tr><th>合约</th><th>类型</th><th>排名</th><th>会员</th><th>数量</th><th>变化</th></tr></thead><tbody>';
     rankRows.forEach(r => {
       html += `<tr>
@@ -939,10 +1000,17 @@ function renderHuijinWatch(){
         <td>${r.change == null ? _na() : fmtChg(Number(r.change))}</td>
       </tr>`;
     });
-    html += '</tbody></table></div></div>';
+    html += '</tbody></table></div>';
   }
+
   panel.innerHTML = html;
-  panel.style.display = '';
+
+  // Click handler for huijin code → open detail modal
+  panel.querySelectorAll('.code.clickable').forEach(el => {
+    el.addEventListener('click', () => {
+      openDetail(el.dataset.code, el.dataset.name);
+    });
+  });
 }
 
 function rankTypeText(type){
@@ -1082,7 +1150,13 @@ function openDetail(code, name){
   const modal = document.getElementById('detailModal');
   document.getElementById('detailTitle').textContent = code + ' ' + (name || '');
   modal.style.display = 'flex';
+  // Reset previous state
+  const canvas = document.getElementById('klineCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   document.getElementById('detailMeta').innerHTML = '<span class="loading" style="padding:8px">加载K线数据...</span>';
+  const wrap = document.getElementById('huijinTrendWrap');
+  if(wrap) wrap.style.display = 'none';
   fetchKlineAndRender(code, name);
 }
 
@@ -1137,8 +1211,30 @@ async function fetchKlineAndRender(code, name){
     if(last.turnover != null) html += '<span class="dm-item">换手率:<b>' + last.turnover + '%</b></span>';
     html += renderHuijinDetailMeta(code);
     meta.innerHTML = html;
+
+    // Conditionally load Huijin trend chart
+    const hi = huijinOverviewItem(code);
+    const wrap = document.getElementById('huijinTrendWrap');
+    if(hi && hi.can_calculate_interval && hi.interval){
+      wrap.style.display = '';
+      try{
+        const sr = await fetch('/api/huijin/' + code + '/series?limit=90');
+        const sd = await sr.json();
+        if(sd && sd.series && sd.series.length > 1){
+          renderHuijinTrendChart(sd.series, sd.baseline);
+        }else{
+          wrap.style.display = 'none';
+        }
+      }catch(e){
+        wrap.style.display = 'none';
+      }
+    }else{
+      wrap.style.display = 'none';
+    }
   }catch(e){
-    document.getElementById('detailMeta').innerHTML = '<span class="error" style="padding:8px">加载失败: ' + e.message + '</span>';
+    const wrap = document.getElementById('huijinTrendWrap');
+    if(wrap) wrap.style.display = 'none';
+    document.getElementById('detailMeta').innerHTML = '<span class="error" style="padding:8px">K线数据加载失败，请确认服务器运行中</span>';
   }
 }
 
@@ -1304,6 +1400,125 @@ function renderKlineChart(data){
     const bodyY = Math.min(openY, closeY);
     const bodyH = Math.max(1, Math.abs(closeY - openY));
     ctx.fillRect(x, bodyY, candleW, bodyH);
+  }
+}
+
+function renderHuijinTrendChart(series, baseline){
+  const canvas = document.getElementById('huijinTrendCanvas');
+  if(!canvas) return;
+  const wrap = document.getElementById('huijinTrendWrap');
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const isMobile = window.innerWidth <= 900;
+  const w = Math.max(280, rect.width - 2);
+  const h = isMobile ? Math.min(200, Math.round(w * 0.5)) : 240;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const pad = {top:16, bottom:22, left:8, right:8};
+  const chartW = w - pad.left - pad.right;
+  const chartH = h - pad.top - pad.bottom;
+
+  const valid = series.filter(d => d.status === 'ok' && d.y_min != null && d.y_max != null && d.b_ratio != null);
+  if(valid.length < 2){ if(wrap) wrap.style.display = 'none'; return; }
+
+  const aVal = baseline && baseline.a_ratio != null ? parseFloat(baseline.a_ratio) : null;
+  const allVals = valid.flatMap(d => [d.y_min, d.y_max, d.b_ratio]);
+  if(aVal != null) allVals.push(aVal);
+  const minV = Math.min(0, ...allVals);
+  const maxV = Math.max(...allVals) * 1.1;
+  const range = maxV - minV || 1;
+
+  const toX = i => pad.left + (i / (valid.length-1)) * chartW;
+  const toY = v => pad.top + chartH - ((v - minV) / range) * chartH;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Grid lines
+  ctx.strokeStyle = '#f0f0f0';
+  ctx.lineWidth = 1;
+  for(let i=0; i<5; i++){
+    const y = pad.top + (i/4) * chartH;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w-pad.right, y); ctx.stroke();
+  }
+
+  // Y_min-Y_max fill band
+  ctx.fillStyle = 'rgba(0,184,148,0.12)';
+  ctx.beginPath();
+  let started = false;
+  for(let i=0; i<valid.length; i++){
+    const d = valid[i];
+    if(!started){ ctx.moveTo(toX(i), toY(d.y_max)); started = true; }
+    else ctx.lineTo(toX(i), toY(d.y_max));
+  }
+  for(let i=valid.length-1; i>=0; i--){
+    ctx.lineTo(toX(i), toY(valid[i].y_min));
+  }
+  ctx.closePath(); ctx.fill();
+
+  // Y_max line
+  ctx.strokeStyle = '#00b894';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  started = false;
+  for(let i=0; i<valid.length; i++){
+    if(!started){ ctx.moveTo(toX(i), toY(valid[i].y_max)); started = true; }
+    else ctx.lineTo(toX(i), toY(valid[i].y_max));
+  }
+  ctx.stroke();
+
+  // Y_min line
+  ctx.strokeStyle = 'rgba(0,184,148,0.5)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3,3]);
+  ctx.beginPath();
+  started = false;
+  for(let i=0; i<valid.length; i++){
+    if(!started){ ctx.moveTo(toX(i), toY(valid[i].y_min)); started = true; }
+    else ctx.lineTo(toX(i), toY(valid[i].y_min));
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // B-ratio line
+  ctx.strokeStyle = '#00b894';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  started = false;
+  for(let i=0; i<valid.length; i++){
+    const v = valid[i].b_ratio;
+    if(v == null){ started = false; continue; }
+    if(!started){ ctx.moveTo(toX(i), toY(v)); started = true; }
+    else ctx.lineTo(toX(i), toY(v));
+  }
+  ctx.stroke();
+
+  // A-ratio baseline
+  if(aVal != null){
+    ctx.strokeStyle = '#f39c12';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5,4]);
+    const ay = toY(aVal);
+    ctx.beginPath(); ctx.moveTo(pad.left, ay); ctx.lineTo(w-pad.right, ay); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#f39c12';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('A=' + aVal.toFixed(3), pad.left + 3, ay - 3);
+  }
+
+  // X-axis date labels
+  ctx.fillStyle = '#718096';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'center';
+  const labelStep = Math.max(1, Math.floor(valid.length / 6));
+  for(let i=0; i<valid.length; i+=labelStep){
+    const label = (valid[i].date || '').slice(5);
+    ctx.fillText(label, toX(i), h - 4);
   }
 }
 

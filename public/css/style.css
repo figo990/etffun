@@ -18,6 +18,11 @@ a:hover{text-decoration:underline}
 .btn:hover{background:#4a5568;border-color:#00b894;color:#68d391;text-decoration:none}
 .btn.has-rules{color:#68d391;border-color:#68d391}
 .filter-strip{min-height:34px;display:flex;align-items:center;gap:14px;padding:4px 10px;background:#e2e8f0;border-bottom:1px solid #cbd5e0;color:#2d3436;font-size:13px}
+.tab-bar{display:flex;gap:0;flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.tab-bar::-webkit-scrollbar{display:none}
+.tab{display:inline-flex;align-items:center;height:28px;padding:0 14px;font-size:13px;font-weight:600;color:#718096;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;flex-shrink:0;user-select:none;transition:all .15s}
+.tab:hover{color:#2d3436;background:#d2d8e0}
+.tab.active{color:#00b894;border-bottom-color:#00b894;background:#fff}
 .filter-title{font-weight:600;color:#00b894;white-space:nowrap}
 .filter-field{display:inline-flex;align-items:center;gap:6px;color:#555;white-space:nowrap}
 #exchangeFilter{height:24px;border:1px solid #cbd5e0;background:#fff;color:#333;padding:1px 6px;font-size:13px}
@@ -45,6 +50,8 @@ tbody tr:hover td{background:#fff6e5}
 .col-跟踪指数{max-width:200px;overflow:hidden;text-overflow:ellipsis}
 .num{display:block;text-align:right;font-family:Arial,Consolas,monospace;font-variant-numeric:tabular-nums}
 .code{font-family:Arial,Consolas,monospace;color:#00b894;font-size:13px}
+.clickable{cursor:pointer}
+.clickable:hover{color:#00e6a8}
 .name{display:block;max-width:178px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#2d3436;font-weight:400}
 .muted{color:#3182ce}
 .small{font-size:12px}
@@ -140,6 +147,8 @@ tbody tr:hover td{background:#fff6e5}
   .search-box{width:min(100%,200px);height:30px;font-size:14px;padding:4px 10px}
   .update-time{font-size:12px}
   .filter-strip{font-size:14px;align-items:flex-start;flex-direction:column;gap:4px;padding:4px 6px}
+  .tab-bar{width:100%;gap:0}
+  .tab{font-size:14px;padding:0 12px;height:32px}
   #exchangeFilter{height:28px;font-size:14px}
   .stats-bar{gap:8px;font-size:14px}
   .filter-panel{position:fixed;top:auto;bottom:0;left:0;right:0;width:auto;max-width:none;border-radius:8px 8px 0 0;max-height:70vh;display:flex;flex-direction:column;box-shadow:0 -4px 24px rgba(0,0,0,.25)}
@@ -175,6 +184,7 @@ tbody tr:hover td{background:#fff6e5}
   .search-box{width:100%;height:30px;font-size:14px}
   .stats-bar{font-size:13px;gap:6px}
   .filter-strip{padding:3px 4px;font-size:13px}
+  .tab{font-size:13px;padding:0 10px;height:30px}
   #exchangeFilter{height:26px;font-size:13px}
   .fp-field{font-size:13px;height:32px}
   .fp-val{font-size:13px;height:32px}
@@ -225,18 +235,33 @@ tbody tr:hover td{background:#fff6e5}
 .hjw-title{font-size:13px;font-weight:700;color:#2f855a;white-space:nowrap}
 .hjw-summary{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#4a5568}
 .hjw-summary b{font-weight:700;color:#1a202c}
-.hjw-note{padding:0 10px 6px;font-size:12px;color:#718096}
-.hjw-table-wrap{max-height:220px;overflow:auto;border-top:1px solid #e2e8f0}
+.hjw-table-wrap{overflow:visible;border-top:1px solid #e2e8f0}
+.hjw-table-note{padding:4px 10px 6px;font-size:11px;color:#4a5568;line-height:18px;background:#f7fafc;border-bottom:1px solid #e2e8f0}
+.hjw-table-note b{color:#2d3748}
 .hjw-table{width:100%;border-collapse:collapse;font-size:12px}
 .hjw-table th,.hjw-table td{padding:5px 8px;border-bottom:1px solid #edf2f7;text-align:left;white-space:nowrap}
 .hjw-table th{position:sticky;top:0;background:#edf2f7;color:#4a5568;font-weight:600}
 .hjw-ok{color:#2f855a;font-weight:600}
 .hjw-block{color:#c53030;font-weight:600}
 .hjw-warn{display:inline-block;margin-left:4px;padding:1px 4px;border-radius:2px;background:#fff3cd;color:#8a5a00;font-size:11px}
-.hjw-cffex{border-top:1px solid #dbe5ef;background:#fff}
-.hjw-subhead{display:flex;justify-content:space-between;gap:12px;padding:6px 10px;font-size:12px;color:#4a5568}
-.hjw-subhead span:first-child{font-weight:700;color:#2d3748}
+.hjt-title{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#e2e8f0;color:#00b894;font-size:13px;font-weight:600;border-bottom:1px solid #cbd5e0;margin-top:8px}
+.hjt-title .hjt-note{font-size:11px;color:#718096;font-weight:400;margin-left:auto}
+.hjt-title .hjt-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px}
+.hjt-title .hjt-dot.ok{background:#00b894}
 .hjw-cffex-table td:nth-child(4){max-width:180px;overflow:hidden;text-overflow:ellipsis}
+
+/* Signal badge */
+.hjw-signal{color:#c05621;font-weight:600}
+.hjw-signal b{color:#dd6b20}
+.hjw-signal-badge{display:inline-block;margin-left:4px;padding:0 5px;border-radius:2px;background:#fef3c7;color:#c05621;font-size:10px;font-weight:700;line-height:16px;vertical-align:middle}
+.hjw-signal-detail{border-top:1px solid #e2e8f0;padding:6px 10px;background:#fffbeb}
+.hjw-signal-item{padding:3px 8px;background:#fff;border:1px solid #fbd38d;border-radius:3px;font-size:11px;color:#7b341e}
+
+/* Pool table */
+.hjw-pool-table{font-size:11px}
+.hjw-pool-table td{padding:4px 8px}
+.hjw-num{text-align:right;font-family:Arial,Consolas,monospace;font-variant-numeric:tabular-nums}
+.hjw-pool-table .hjw-num{font-size:11px}
 
 @media(max-width:900px){
   .sector-flow{margin:4px 6px 0}
@@ -274,6 +299,18 @@ td.cell-code{position:relative}
 .detail-meta .dm-item .neg{color:#16833a}
 .detail-meta .dm-item .pos{color:#d94b45}
 
+/* Huijin trend chart in detail modal */
+.detail-hjw-chart-wrap{width:100%;margin-top:10px;background:#fafbfc;border:1px solid #e2e8f0;border-radius:4px;padding:8px}
+.hjw-chart-title{font-size:13px;font-weight:700;color:#2f855a;margin-bottom:2px}
+.hjw-chart-note{font-size:11px;color:#718096;margin-bottom:6px;line-height:16px}
+#huijinTrendCanvas{width:100%;height:240px;display:block}
+.hjw-chart-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:6px;font-size:11px;color:#4a5568}
+.hcl-item{display:flex;align-items:center;gap:4px}
+.hcl-item i{display:inline-block;width:18px;height:3px;border-radius:1px}
+.hcl-band i{background:#00b894;height:8px;border-radius:1px;opacity:0.4}
+.hcl-b i{background:#00b894;height:2px}
+.hcl-a i{border-top:2px dashed #f39c12;height:0;width:18px;background:transparent}
+
 @media(max-width:900px){
   .modal-content{width:100%;max-height:100vh;border-radius:0}
   .modal-header{border-radius:0;padding:8px 10px}
@@ -283,4 +320,7 @@ td.cell-code{position:relative}
   #klineCanvas{height:auto;display:block}
   .detail-meta{gap:4px;font-size:11px}
   .detail-meta .dm-item{padding:2px 5px}
+  .detail-hjw-chart-wrap{padding:4px}
+  #huijinTrendCanvas{height:auto;display:block}
+  .hjw-chart-legend{gap:8px;font-size:10px}
 }
