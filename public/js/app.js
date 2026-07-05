@@ -832,7 +832,7 @@ async function _sfLoad(period){
     const panel = document.getElementById('sectorFlowPanel');
     panel.style.display = '';
     const body = document.getElementById('sectorFlowBody');
-    body.style.display = '';
+    body.style.display = 'none';
     _sfRender();
   }catch(e){}
 }
@@ -1210,9 +1210,13 @@ document.getElementById('refreshBtn').addEventListener('click', loadData);
 document.getElementById('sectorFlowToggle').addEventListener('click', () => {
   const body = document.getElementById('sectorFlowBody');
   const arrow = document.querySelector('.sf-arrow');
-  const show = body.style.display !== 'block';
-  body.style.display = show ? 'block' : 'none';
-  if(arrow) arrow.textContent = show ? '▾' : '▸';
+  if (body.style.display === 'none') {
+    body.style.display = 'block';
+    if(arrow) arrow.textContent = '▾';
+  } else {
+    body.style.display = 'none';
+    if(arrow) arrow.textContent = '▸';
+  }
 });
 
 updateFilterBadge();
