@@ -541,6 +541,16 @@ def seed_huijin_baselines_from_config():
         """, [code])
         if existing:
             continue
+        # Secondary check on write DB to avoid stale read replica
+        from db.core import query as _q
+        df = _q("""
+            SELECT 1 FROM huijin_baseline
+            WHERE code = ? AND verification_status = 'verified' AND is_active = true
+            LIMIT 1
+        """, [code], read_only=False)
+        if df is not None and not df.empty:
+            continue
+            continue
         info = info or {}
         h_yi = _nullable_float(info.get('汇金总持股(亿)'))
         h0 = h_yi * 1e8 if h_yi is not None else None
