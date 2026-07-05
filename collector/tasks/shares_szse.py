@@ -1,6 +1,8 @@
 import pandas as pd
 import io
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import time
 import warnings
 from datetime import datetime
@@ -10,6 +12,15 @@ from db import (
     upsert_daily_snapshot_audit, infer_trading_date,
 )
 from ..task_base import BaseTask
+
+
+def _make_session():
+    sess = requests.Session()
+    retries = Retry(total=3, backoff_factor=2, status_forcelist=[502, 503, 504])
+    adapter = HTTPAdapter(max_retries=retries, pool_connections=1, pool_maxsize=1)
+    sess.mount('https://', adapter)
+    sess.mount('http://', adapter)
+    return sess
 
 
 def _fetch_szse_via_http(retries=5):
@@ -25,9 +36,10 @@ def _fetch_szse_via_http(retries=5):
         "Referer": "https://fund.szse.cn/marketdata/fundslist/index.html",
         "User-Agent": "Mozilla/5.0"
     }
+    sess = _make_session()
     for attempt in range(retries):
         try:
-            r = requests.get(url, params=params, headers=headers, timeout=90)
+            r = sess.get(url, params=params, headers=headers, timeout=120)
             r.raise_for_status()
             with warnings.catch_warnings(record=True):
                 warnings.simplefilter("always")
