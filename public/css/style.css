@@ -79,8 +79,7 @@ tbody tr:hover td{background:#fff6e5}
 .btn-qr{color:#a0aec0}
 .btn-qr:hover{border-color:#a0aec0;color:#e2e8f0}
 @media(max-width:900px){
-  .qr-panel{position:fixed;top:auto;bottom:80px;right:10px;margin-top:0;width:140px}
-  .qr-panel img{width:140px;height:140px}
+  .qr-panel img{max-width:120px;height:auto}
 }
 
 /* Filter button wrapper */
