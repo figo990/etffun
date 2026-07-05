@@ -268,6 +268,7 @@ tbody tr:hover td{background:#fff6e5}
   .huijin-watch{margin:4px 6px 0}
   .hjw-head{align-items:flex-start;flex-direction:column;gap:4px}
   .hjw-summary{gap:8px}
+  .hjw-table-wrap{overflow-x:auto}
   .hjw-table th,.hjw-table td{padding:5px 6px}
   .sf-table td{padding:3px 4px;font-size:11px}
   .sf-table th{font-size:10px;padding:2px 4px}
