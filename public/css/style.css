@@ -274,6 +274,10 @@ tbody tr:hover td{background:#fff6e5}
   .sf-table th{font-size:10px;padding:2px 4px}
   .sf-tab{padding:3px 10px;font-size:11px}
 }
+/* Huijin change colors */
+.hjw-chg{font-weight:600;font-family:Arial,Consolas,monospace}
+.hjw-chg-bad{color:#d94b45}
+.hjw-chg-good{color:#16833a}
 
 /* Code column clickable */
 .cell-code{cursor:pointer}

@@ -1288,28 +1288,61 @@ def _latest_valid_share(code, as_of_date, exchange):
     return None
 
 
-def _share_changes(code, share_date):
-    rows = _to_records(query("""
-        SELECT date, total_shares
-        FROM daily_snapshot
-        WHERE code = ? AND total_shares IS NOT NULL AND date <= ?
-          AND strftime(date, '%w') NOT IN ('0', '6')
-        ORDER BY date DESC
-        LIMIT 22
-    """, [str(code), _nullable_norm_date(share_date)]))
-    if not rows:
-        return {}
-    latest = rows[0]
+def _share_changes(code, share_date, baseline=None):
+    """Get share changes over 1, 5, 10, 20, 60 trading days and vs baseline."""
     result = {}
-    for label, offset in [('1d', 1), ('5d', 5), ('21d', 21)]:
-        prev = rows[offset] if len(rows) > offset else None
-        if prev and prev.get('total_shares') not in (None, 0):
-            delta = latest['total_shares'] - prev['total_shares']
-            result[f'share_change_{label}'] = round(delta / 1e4, 2)
-            result[f'share_change_ratio_{label}'] = round(delta / prev['total_shares'] * 100, 4)
-        else:
-            result[f'share_change_{label}'] = None
-            result[f'share_change_ratio_{label}'] = None
+    exchange = _code_exchange(code)
+
+    # Use market_calendar to find past trading day dates
+    has_calendar = _table_exists('market_calendar') and query_one("SELECT COUNT(*) AS cnt FROM market_calendar WHERE exchange=? AND is_trading_day=TRUE LIMIT 1", [exchange])
+    if has_calendar and has_calendar.get('cnt', 0) > 0:
+        past_dates = [r['date'] for r in _to_records(query("""
+            SELECT date FROM market_calendar
+            WHERE exchange = ? AND is_trading_day = TRUE AND date < ?
+            ORDER BY date DESC
+            LIMIT 60
+        """, [exchange, _nullable_norm_date(share_date)]))]
+    else:
+        # Fallback: use daily_snapshot with weekend filter
+        past_rows = _to_records(query("""
+            SELECT date FROM daily_snapshot
+            WHERE code = ? AND total_shares IS NOT NULL AND date < ?
+              AND strftime(date, '%w') NOT IN ('0', '6')
+            ORDER BY date DESC
+            LIMIT 60
+        """, [str(code), _nullable_norm_date(share_date)]))
+        past_dates = [r['date'] for r in past_rows]
+
+    if not past_dates:
+        return result
+
+    # Get current shares
+    cur_row = query_one("SELECT total_shares FROM daily_snapshot WHERE code=? AND date=?",
+                        [str(code), _nullable_norm_date(share_date)])
+    cur_shares = cur_row['total_shares'] if cur_row and cur_row.get('total_shares') is not None else None
+    if cur_shares is None:
+        return result
+
+    offsets = [('1d', 1), ('5d', 5), ('10d', 10), ('20d', 20), ('60d', 60)]
+    for label, offset in offsets:
+        if len(past_dates) >= offset:
+            prev_date = past_dates[offset - 1]
+            prev_row = query_one("SELECT total_shares FROM daily_snapshot WHERE code=? AND date=?",
+                                 [str(code), _nullable_norm_date(prev_date)])
+            prev_shares = prev_row['total_shares'] if prev_row else None
+            if prev_shares and prev_shares > 0:
+                delta = cur_shares - prev_shares
+                result[f'share_change_{label}'] = round(delta / 1e4, 2)
+                result[f'share_change_ratio_{label}'] = round(delta / prev_shares * 100, 4)
+
+    # Vs baseline (S0)
+    if baseline and baseline.get('s0_total_shares'):
+        s0 = float(baseline['s0_total_shares'])
+        if s0 > 0:
+            ratio = cur_shares / s0
+            result['vs_baseline_ratio'] = round(ratio, 4)
+            result['vs_baseline_pct'] = round((ratio - 1) * 100, 2)
+
     return result
 
 
@@ -1510,7 +1543,7 @@ def get_huijin_overview(as_of_date=None):
         interval = None
         if not blockers and baseline and share:
             interval = _calculate_huijin_interval(baseline, share)
-        changes = _share_changes(code, share['date']) if share else {}
+        changes = _share_changes(code, share['date'], baseline=baseline) if share else {}
         audit = share.get('audit') if share else None
         items.append({
             'code': code,
@@ -1535,10 +1568,16 @@ def get_huijin_overview(as_of_date=None):
             },
             'share_change_1d': changes.get('share_change_1d'),
             'share_change_5d': changes.get('share_change_5d'),
-            'share_change_21d': changes.get('share_change_21d'),
+            'share_change_10d': changes.get('share_change_10d'),
+            'share_change_20d': changes.get('share_change_20d'),
+            'share_change_60d': changes.get('share_change_60d'),
             'share_change_ratio_1d': changes.get('share_change_ratio_1d'),
             'share_change_ratio_5d': changes.get('share_change_ratio_5d'),
-            'share_change_ratio_21d': changes.get('share_change_ratio_21d'),
+            'share_change_ratio_10d': changes.get('share_change_ratio_10d'),
+            'share_change_ratio_20d': changes.get('share_change_ratio_20d'),
+            'share_change_ratio_60d': changes.get('share_change_ratio_60d'),
+            'vs_baseline_ratio': changes.get('vs_baseline_ratio'),
+            'vs_baseline_pct': changes.get('vs_baseline_pct'),
             'interval': interval,
             'interval_note': '相对披露日总份额归一化口径，不代表实时汇金真实持仓' if interval else None,
             'ten_x_signal': _detect_ten_x_signal(code, as_of),
@@ -1565,7 +1604,9 @@ def get_huijin_overview(as_of_date=None):
             'total_s0_shares': total_s0,
             'share_change_ratio_1d': _pool_change_ratio(group_items, 'share_change_1d', total_shares),
             'share_change_ratio_5d': _pool_change_ratio(group_items, 'share_change_5d', total_shares),
-            'share_change_ratio_21d': _pool_change_ratio(group_items, 'share_change_21d', total_shares),
+            'share_change_ratio_10d': _pool_change_ratio(group_items, 'share_change_10d', total_shares),
+            'share_change_ratio_20d': _pool_change_ratio(group_items, 'share_change_20d', total_shares),
+            'share_change_ratio_60d': _pool_change_ratio(group_items, 'share_change_60d', total_shares),
         })
 
     ok_count = sum(1 for i in items if i['status'] == 'ok')
