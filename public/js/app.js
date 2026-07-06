@@ -1058,24 +1058,28 @@ let _sfSortPeriod = '1d';
 let _sfSortDir = 'desc';
 
 async function loadSectorFlow(){
-  const periods = ['1d','3d','5d','10d','20d'];
-  const labels = {'1d':'即时','3d':'3日','5d':'5日','10d':'10日','20d':'20日'};
-  const results = await Promise.all(periods.map(p =>
-    fetch('/api/etf/sector-flow?period='+p).then(r => r.json()).catch(() => ({}))
-  ));
-  _sfAllData = {};
-  let hasData = false;
-  periods.forEach((p, i) => {
-    const data = results[i].data || [];
-    if(data.length) hasData = true;
-    _sfAllData[p] = {data, label: labels[p]};
-  });
-  if(!hasData) return;
-  const panel = document.getElementById('sectorFlowPanel');
-  panel.style.display = '';
-  const body = document.getElementById('sectorFlowBody');
-  if(body) body.style.display = 'none';
-  _sfRender();
+  try {
+    const periods = ['1d','3d','5d','10d','20d'];
+    const labels = {'1d':'即时','3d':'3日','5d':'5日','10d':'10日','20d':'20日'};
+    const results = await Promise.all(periods.map(p =>
+      fetch('/api/etf/sector-flow?period='+p).then(r => r.json()).catch(() => ({}))
+    ));
+    _sfAllData = {};
+    let hasData = false;
+    periods.forEach((p, i) => {
+      const data = results[i].data || [];
+      if(data.length) hasData = true;
+      _sfAllData[p] = {data, label: labels[p]};
+    });
+    if(!hasData) return;
+    const panel = document.getElementById('sectorFlowPanel');
+    panel.style.display = '';
+    const body = document.getElementById('sectorFlowBody');
+    if(body) body.style.display = 'none';
+    _sfRender();
+  } catch(e) {
+    console.error('sector flow load error:', e);
+  }
 }
 
 function _sfRender(){
@@ -1606,9 +1610,12 @@ document.getElementById('exchangeFilter').addEventListener('change', () => rende
 document.getElementById('refreshBtn').addEventListener('click', loadData);
 
 document.getElementById('sectorFlowToggle').addEventListener('click', () => {
+  const panel = document.getElementById('sectorFlowPanel');
   const body = document.getElementById('sectorFlowBody');
   const arrow = document.querySelector('.sf-arrow');
-  if (body.style.display === 'none') {
+  panel.style.display = '';
+  const isHidden = body.style.display === 'none' || body.style.display === '';
+  if (isHidden) {
     body.style.display = 'block';
     if(arrow) arrow.textContent = '▾';
   } else {
