@@ -1524,7 +1524,7 @@ def _validate_huijin_inputs(code, baseline, share, skip_quality=False, skip_trad
             ))
         for flag in ['SHARE_GAP', 'ABNORMAL_JUMP']:
             if flag in flags:
-                warnings.append(_issue(flag, 'info', f'份额 audit 标记 {flag}', code=code, date=share.get('date')))
+                pass  # handled by _audit_item_additional_issues
 
     events = []
     if not skip_events and baseline.get('report_date') and share.get('date'):
@@ -2066,7 +2066,7 @@ def get_huijin_overview(as_of_date=None):
             elif iss.get('severity') != 'info':
                 warnings.append(iss)
         blockers = _dedupe_issues(blockers)
-        warnings = [w for w in _dedupe_issues(warnings) if w.get('severity') != 'info']
+        warnings = _dedupe_issues(warnings)
         interval = None
         if not blockers and baseline and share:
             interval = _calculate_huijin_interval(baseline, share)
