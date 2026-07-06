@@ -2066,7 +2066,7 @@ def get_huijin_overview(as_of_date=None):
             elif iss.get('severity') != 'info':
                 warnings.append(iss)
         blockers = _dedupe_issues(blockers)
-        warnings = _dedupe_issues(warnings)
+        warnings = [w for w in _dedupe_issues(warnings) if w.get('severity') != 'info']
         interval = None
         if not blockers and baseline and share:
             interval = _calculate_huijin_interval(baseline, share)
@@ -2725,8 +2725,6 @@ def get_huijin_event_study(as_of_date=None, windows=None, include_warnings=False
                             date=event_date,
                         ))
                         break
-            blockers = _dedupe_issues(blockers)
-            warnings = _dedupe_issues(warnings)
             if blockers:
                 skipped['blocked'] += 1
                 for issue in blockers:
