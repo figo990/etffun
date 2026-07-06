@@ -1792,6 +1792,8 @@ def _compute_source_level(share, audit):
 
 
 def _compute_quality_level(blockers, warnings, baseline, share, audit):
+    # Filter out info-level warnings (informational only)
+    warnings = [w for w in (warnings or []) if w.get('severity') != 'info']
     """Split into baseline_quality, share_quality, overall_quality"""
     # Baseline quality
     if baseline and baseline.get('verification_status') == 'verified':
