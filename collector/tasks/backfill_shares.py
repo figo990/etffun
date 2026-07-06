@@ -3,8 +3,12 @@ Backfill historical SHARES data to align with NAV (2024-07 ~ 2026-07).
 SSE: fund_etf_scale_sse(date) - one call per date, ~550-820 ETFs
 SZSE: fund_scale_daily_szse(start, end, 'ETF') - batch by month, ~1000 ETFs/date
 
-Usage: python -m collector.tasks.backfill_shares
+Usage:
+  python -m collector.tasks.backfill_shares
+  python -m collector.tasks.backfill_shares --repair-huijin-audit --start 2025-12-31
+  python -m collector.tasks.backfill_shares --fill-huijin-missing-shares --start 2026-04-07 --end 2026-07-01
 """
+import argparse
 import sys, os, time
 from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -27,6 +31,384 @@ def trading_dates(start='2024-07-01', end='2026-07-03'):
             dates.append(d.strftime('%Y%m%d'))
         d += timedelta(days=1)
     return dates
+
+
+def shares_match_for_audit(local_shares, source_shares, abs_tolerance=1.0, rel_tolerance=1e-7):
+    if local_shares is None or source_shares is None:
+        return False
+    local = float(local_shares)
+    source = float(source_shares)
+    if local <= 0 or source <= 0:
+        return False
+    return abs(local - source) <= max(abs_tolerance, abs(local) * rel_tolerance)
+
+
+def _norm_ymd(value):
+    if isinstance(value, datetime):
+        return value.strftime('%Y%m%d')
+    text = str(value)[:10]
+    return text.replace('-', '')
+
+
+def _norm_date(value):
+    if isinstance(value, datetime):
+        return value.strftime('%Y-%m-%d')
+    text = str(value)[:10]
+    if len(text) == 8 and text.isdigit():
+        return f'{text[:4]}-{text[4:6]}-{text[6:8]}'
+    return text.replace('/', '-')
+
+
+def _chunks(values, size):
+    for i in range(0, len(values), size):
+        yield values[i:i + size]
+
+
+def _repair_targets(start=None, end=None, codes=None):
+    filters = [
+        "b.verification_status = 'verified'",
+        "b.is_active = TRUE",
+        "b.disclosure_date IS NOT NULL",
+        "s.date >= b.disclosure_date",
+        "s.total_shares IS NOT NULL",
+        "strftime(s.date, '%w') NOT IN ('0', '6')",
+        """
+        NOT EXISTS (
+            SELECT 1 FROM daily_snapshot_audit a
+            WHERE a.date = s.date AND a.code = s.code
+              AND a.source_name IN (
+                  'sse_etf_scale', 'szse_etf_scale',
+                  'backfill_sse_etf_scale', 'backfill_szse_etf_scale'
+              )
+        )
+        """,
+    ]
+    params = []
+    if start:
+        filters.append("s.date >= ?")
+        params.append(_norm_date(start))
+    if end:
+        filters.append("s.date <= ?")
+        params.append(_norm_date(end))
+    if codes:
+        placeholders = ','.join('?' for _ in codes)
+        filters.append(f"s.code IN ({placeholders})")
+        params.extend(str(c) for c in codes)
+    where_sql = " AND ".join(filters)
+    return query(f"""
+        SELECT s.date, s.code, s.total_shares
+        FROM daily_snapshot s
+        JOIN huijin_baseline b ON b.code = s.code
+        WHERE {where_sql}
+        ORDER BY s.date, s.code
+    """, params)
+
+
+def _missing_share_targets(start=None, end=None, codes=None):
+    filters = [
+        "b.verification_status = 'verified'",
+        "b.is_active = TRUE",
+        "b.disclosure_date IS NOT NULL",
+        "mc.date >= b.disclosure_date",
+        "mc.is_trading_day = TRUE",
+    ]
+    params = []
+    if start:
+        filters.append("mc.date >= ?")
+        params.append(_norm_date(start))
+    if end:
+        filters.append("mc.date <= ?")
+        params.append(_norm_date(end))
+    if codes:
+        placeholders = ','.join('?' for _ in codes)
+        filters.append(f"b.code IN ({placeholders})")
+        params.extend(str(c) for c in codes)
+    where_sql = " AND ".join(filters)
+    return query(f"""
+        WITH baseline_codes AS (
+            SELECT code,
+                   CASE WHEN starts_with(code, '5') THEN 'SSE' ELSE 'SZSE' END AS exchange,
+                   disclosure_date
+            FROM huijin_baseline b
+            WHERE b.verification_status = 'verified' AND b.is_active = TRUE
+        )
+        SELECT c.code, c.exchange, mc.date
+        FROM baseline_codes c
+        JOIN market_calendar mc ON mc.exchange = c.exchange
+        LEFT JOIN daily_snapshot s
+          ON s.code = c.code AND s.date = mc.date AND s.total_shares IS NOT NULL
+        JOIN huijin_baseline b ON b.code = c.code AND b.verification_status = 'verified' AND b.is_active = TRUE
+        WHERE {where_sql}
+          AND s.code IS NULL
+        ORDER BY mc.date, c.code
+    """, params)
+
+
+def fill_huijin_missing_shares(start=None, end=None, codes=None, dry_run=False, batch_size=20):
+    """Fill missing Huijin ETF share rows after verified disclosure dates."""
+    code_filter = [str(c).strip() for c in (codes or []) if str(c).strip()]
+    targets_df = _missing_share_targets(start=start, end=end, codes=code_filter or None)
+    if targets_df.empty:
+        print('No Huijin share rows require filling')
+        return {'targets': 0, 'matched': 0, 'written': 0, 'missing': 0}
+
+    targets = {( _norm_date(r['date']), str(r['code']) ): str(r['exchange'])
+               for _, r in targets_df.iterrows()}
+    dates = sorted({date for date, _ in targets})
+    run_id = create_data_source_run('backfill_huijin_missing_shares', 'verified_historical_etf_scale')
+    snap_rows = []
+    audit_rows = []
+    missing = []
+
+    try:
+        sse_dates = [d for d in dates if any(ex == 'SSE' for (dd, _), ex in targets.items() if dd == d)]
+        for idx, date in enumerate(sse_dates, 1):
+            ymd = _norm_ymd(date)
+            try:
+                df = ak.fund_etf_scale_sse(date=ymd)
+            except Exception as exc:
+                print(f'  [SSE] {date} FAIL: {exc}', flush=True)
+                for key, ex in targets.items():
+                    if key[0] == date and ex == 'SSE':
+                        missing.append(key)
+                continue
+            source = {}
+            for _, r in df.iterrows():
+                code = str(r.get('基金代码'))
+                shares = float(r.get('基金份额')) if pd.notna(r.get('基金份额')) else None
+                if shares:
+                    source[code] = shares
+            for (row_date, code), ex in targets.items():
+                if row_date != date or ex != 'SSE':
+                    continue
+                shares = source.get(code)
+                if shares is None:
+                    missing.append((row_date, code))
+                    continue
+                snap_rows.append((row_date, code, shares))
+                audit_rows.append({
+                    'date': row_date,
+                    'code': code,
+                    'source_name': 'backfill_sse_etf_scale',
+                    'source_url': f'akshare.fund_etf_scale_sse(date={ymd})',
+                    'source_date': row_date,
+                    'source_date_inferred': False,
+                    'raw_total_shares': shares,
+                    'raw_unit': '份',
+                    'normalized_total_shares': shares,
+                    'run_id': run_id,
+                    'quality_flags': '',
+                })
+            if idx % 20 == 0 or idx == len(sse_dates):
+                print(f'  [SSE] {idx}/{len(sse_dates)} dates, matched={len(snap_rows)}', flush=True)
+
+        szse_dates = [d for d in dates if any(ex == 'SZSE' for (dd, _), ex in targets.items() if dd == d)]
+        for chunk in _chunks(szse_dates, batch_size):
+            s_ymd = _norm_ymd(chunk[0])
+            e_ymd = _norm_ymd(chunk[-1])
+            try:
+                df = ak.fund_scale_daily_szse(start_date=s_ymd, end_date=e_ymd, symbol='ETF')
+            except Exception as exc:
+                print(f'  [SZSE] {chunk[0]}~{chunk[-1]} FAIL: {exc}', flush=True)
+                for key, ex in targets.items():
+                    if key[0] in set(chunk) and ex == 'SZSE':
+                        missing.append(key)
+                continue
+            source = {}
+            for _, r in df.iterrows():
+                date = _norm_date(r.get('日期'))
+                code = str(r.get('基金代码'))
+                shares = float(r.get('基金份额')) if pd.notna(r.get('基金份额')) else None
+                if shares:
+                    source[(date, code)] = shares
+            for (date, code), ex in targets.items():
+                if date not in set(chunk) or ex != 'SZSE':
+                    continue
+                shares = source.get((date, code))
+                if shares is None:
+                    missing.append((date, code))
+                    continue
+                snap_rows.append((date, code, shares))
+                audit_rows.append({
+                    'date': date,
+                    'code': code,
+                    'source_name': 'backfill_szse_etf_scale',
+                    'source_url': f'akshare.fund_scale_daily_szse(start_date={s_ymd}, end_date={e_ymd}, symbol=ETF)',
+                    'source_date': date,
+                    'source_date_inferred': False,
+                    'raw_total_shares': shares,
+                    'raw_unit': '份',
+                    'normalized_total_shares': shares,
+                    'run_id': run_id,
+                    'quality_flags': '',
+                })
+            print(f'  [SZSE] {chunk[0]}~{chunk[-1]} rows={len(df)}, matched={len(snap_rows)}', flush=True)
+
+        written = 0
+        if snap_rows and not dry_run:
+            sql = """
+                INSERT INTO daily_snapshot (
+                    date, code, total_shares, price, price_change_pct, turnover,
+                    iopv, discount_rt, nav, nav_date
+                )
+                VALUES (?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL)
+                ON CONFLICT (date, code) DO UPDATE SET
+                    total_shares = EXCLUDED.total_shares
+            """
+            for chunk in _chunks(snap_rows, 500):
+                execute_many(sql, chunk)
+            for chunk in _chunks(audit_rows, 500):
+                written += upsert_daily_snapshot_audit(chunk)
+        finish_data_source_run(run_id, 'success', written)
+        result = {
+            'targets': len(targets),
+            'matched': len(snap_rows),
+            'written': written,
+            'missing': len(missing),
+        }
+        print(f"Huijin missing shares fill: {result}")
+        if missing[:10]:
+            print('First missing:', missing[:10])
+        return result
+    except Exception as exc:
+        finish_data_source_run(run_id, 'failed', len(snap_rows), str(exc))
+        raise
+
+
+def repair_huijin_verified_audit(start=None, end=None, codes=None, dry_run=False, batch_size=20):
+    """Verify and add exchange-source audit rows for Huijin backtest samples.
+
+    Existing legacy rows are not relabeled. A backfill audit row is written only
+    when the public source value matches the local S1 for the same code/date.
+    """
+    code_filter = [str(c).strip() for c in (codes or []) if str(c).strip()]
+    targets_df = _repair_targets(start=start, end=end, codes=code_filter or None)
+    if targets_df.empty:
+        print('No Huijin audit rows require repair')
+        return {'targets': 0, 'matched': 0, 'written': 0, 'mismatched': 0, 'missing': 0}
+
+    targets = {}
+    for _, row in targets_df.iterrows():
+        date = _norm_date(row['date'])
+        code = str(row['code'])
+        targets[(date, code)] = float(row['total_shares'])
+
+    dates = sorted({date for date, _ in targets})
+    sse_dates = [d for d in dates if any(code.startswith('5') for dd, code in targets if dd == d)]
+    szse_dates = [d for d in dates if any(code.startswith('1') for dd, code in targets if dd == d)]
+
+    run_id = create_data_source_run('backfill_huijin_audit', 'verified_historical_etf_scale')
+    audit_rows = []
+    mismatches = []
+    missing = []
+
+    try:
+        for idx, date in enumerate(sse_dates, 1):
+            ymd = _norm_ymd(date)
+            try:
+                df = ak.fund_etf_scale_sse(date=ymd)
+            except Exception as exc:
+                print(f'  [SSE] {date} FAIL: {exc}', flush=True)
+                for key in [k for k in targets if k[0] == date and k[1].startswith('5')]:
+                    missing.append(key)
+                continue
+            source = {}
+            for _, r in df.iterrows():
+                code = str(r.get('基金代码'))
+                shares = float(r.get('基金份额')) if pd.notna(r.get('基金份额')) else None
+                if shares:
+                    source[code] = shares
+            for key, local_shares in targets.items():
+                row_date, code = key
+                if row_date != date or not code.startswith('5'):
+                    continue
+                source_shares = source.get(code)
+                if source_shares is None:
+                    missing.append(key)
+                    continue
+                if shares_match_for_audit(local_shares, source_shares):
+                    audit_rows.append({
+                        'date': date,
+                        'code': code,
+                        'source_name': 'backfill_sse_etf_scale',
+                        'source_url': f'akshare.fund_etf_scale_sse(date={ymd})',
+                        'source_date': date,
+                        'source_date_inferred': False,
+                        'raw_total_shares': source_shares,
+                        'raw_unit': '份',
+                        'normalized_total_shares': source_shares,
+                        'run_id': run_id,
+                        'quality_flags': '',
+                    })
+                else:
+                    mismatches.append((date, code, local_shares, source_shares))
+            if idx % 20 == 0 or idx == len(sse_dates):
+                print(f'  [SSE] {idx}/{len(sse_dates)} dates, matched={len(audit_rows)}', flush=True)
+
+        for chunk in _chunks(szse_dates, batch_size):
+            s_ymd = _norm_ymd(chunk[0])
+            e_ymd = _norm_ymd(chunk[-1])
+            try:
+                df = ak.fund_scale_daily_szse(start_date=s_ymd, end_date=e_ymd, symbol='ETF')
+            except Exception as exc:
+                print(f'  [SZSE] {chunk[0]}~{chunk[-1]} FAIL: {exc}', flush=True)
+                for key in [k for k in targets if k[0] in set(chunk) and k[1].startswith('1')]:
+                    missing.append(key)
+                continue
+            source = {}
+            for _, r in df.iterrows():
+                date = _norm_date(r.get('日期'))
+                code = str(r.get('基金代码'))
+                shares = float(r.get('基金份额')) if pd.notna(r.get('基金份额')) else None
+                if shares:
+                    source[(date, code)] = shares
+            for key, local_shares in targets.items():
+                date, code = key
+                if date not in set(chunk) or not code.startswith('1'):
+                    continue
+                source_shares = source.get(key)
+                if source_shares is None:
+                    missing.append(key)
+                    continue
+                if shares_match_for_audit(local_shares, source_shares):
+                    audit_rows.append({
+                        'date': date,
+                        'code': code,
+                        'source_name': 'backfill_szse_etf_scale',
+                        'source_url': f'akshare.fund_scale_daily_szse(start_date={s_ymd}, end_date={e_ymd}, symbol=ETF)',
+                        'source_date': date,
+                        'source_date_inferred': False,
+                        'raw_total_shares': source_shares,
+                        'raw_unit': '份',
+                        'normalized_total_shares': source_shares,
+                        'run_id': run_id,
+                        'quality_flags': '',
+                    })
+                else:
+                    mismatches.append((date, code, local_shares, source_shares))
+            print(f'  [SZSE] {chunk[0]}~{chunk[-1]} rows={len(df)}, matched={len(audit_rows)}', flush=True)
+
+        written = 0
+        if audit_rows and not dry_run:
+            for chunk in _chunks(audit_rows, 500):
+                written += upsert_daily_snapshot_audit(chunk)
+        finish_data_source_run(run_id, 'success', written)
+        result = {
+            'targets': len(targets),
+            'matched': len(audit_rows),
+            'written': written,
+            'mismatched': len(mismatches),
+            'missing': len(missing),
+        }
+        print(f"Huijin audit repair: {result}")
+        if mismatches[:10]:
+            print('First mismatches:', mismatches[:10])
+        if missing[:10]:
+            print('First missing:', missing[:10])
+        return result
+    except Exception as exc:
+        finish_data_source_run(run_id, 'failed', len(audit_rows), str(exc))
+        raise
 
 
 def main():
@@ -161,4 +543,29 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--repair-huijin-audit', action='store_true',
+                        help='verify and add exchange backfill audit rows for Huijin backtest samples')
+    parser.add_argument('--fill-huijin-missing-shares', action='store_true',
+                        help='fill missing Huijin ETF share rows from public exchange sources')
+    parser.add_argument('--start', default=None)
+    parser.add_argument('--end', default=None)
+    parser.add_argument('--codes', default=None, help='comma-separated ETF codes')
+    parser.add_argument('--dry-run', action='store_true')
+    args = parser.parse_args()
+    if args.fill_huijin_missing_shares:
+        fill_huijin_missing_shares(
+            start=args.start,
+            end=args.end,
+            codes=args.codes.split(',') if args.codes else None,
+            dry_run=args.dry_run,
+        )
+    elif args.repair_huijin_audit:
+        repair_huijin_verified_audit(
+            start=args.start,
+            end=args.end,
+            codes=args.codes.split(',') if args.codes else None,
+            dry_run=args.dry_run,
+        )
+    else:
+        main()

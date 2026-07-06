@@ -1,6 +1,8 @@
 """Test: get_all_etf SQL with new JOINs (uses main DB)"""
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from tests._isolation import use_temp_db
+use_temp_db('etffun_sql_')
 
 from db.core import execute, query, get_conn
 from db.schema import init_db

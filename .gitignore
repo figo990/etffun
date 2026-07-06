@@ -16,5 +16,7 @@ docs/*
 !docs/
 !docs/huijin-watch-requirements.md
 !docs/huijin-baseline-verification-checklist.md
+!docs/huijin-watch-usage.md
+!docs/huijin-watch-todo.md
 data
 wsgi.py

@@ -34,6 +34,27 @@ def get_huijin_series_route(code):
         return jsonify({'error': safe_error(e)}), 500
 
 
+@huijin_api.route('/api/huijin/backtest')
+def get_huijin_backtest_route():
+    try:
+        as_of_date = request.args.get('as_of_date') or None
+        raw_windows = request.args.get('windows') or '5,10,20,60'
+        windows = []
+        for part in raw_windows.split(','):
+            part = part.strip()
+            if part.isdigit():
+                windows.append(int(part))
+        include_warnings = str(request.args.get('include_warnings') or '').lower() in ('1', 'true', 'yes')
+        data = cache.get_huijin_event_study(
+            as_of_date=as_of_date,
+            windows=windows or [5, 10, 20, 60],
+            include_warnings=include_warnings,
+        )
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': safe_error(e)}), 500
+
+
 @huijin_api.route('/api/huijin/cffex-position-rank')
 def get_huijin_cffex_position_rank():
     try:

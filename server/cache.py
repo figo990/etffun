@@ -1,6 +1,6 @@
 import time
 import duckdb
-from db import get_all_etf, get_stats, get_task_status_all, get_huijin_overview
+from db import get_all_etf, get_stats, get_task_status_all, get_huijin_overview, get_huijin_event_study
 
 
 class DataCache:
@@ -13,6 +13,8 @@ class DataCache:
         self._tasks_ts = 0
         self._huijin_overview = {}
         self._huijin_overview_ts = {}
+        self._huijin_event_study = {}
+        self._huijin_event_study_ts = {}
         self._ttl = ttl
         self._stale_ttl = stale_ttl
 
@@ -69,12 +71,38 @@ class DataCache:
                 raise
         return cached
 
+    def get_huijin_event_study(self, as_of_date=None, windows=None, include_warnings=False, force=False):
+        key = (
+            as_of_date or '',
+            ','.join(str(w) for w in (windows or [5, 10, 20, 60])),
+            bool(include_warnings),
+        )
+        cached = self._huijin_event_study.get(key)
+        ts = self._huijin_event_study_ts.get(key, 0)
+        if force or cached is None or self._is_expired(ts):
+            try:
+                fresh = get_huijin_event_study(
+                    as_of_date=as_of_date,
+                    windows=windows,
+                    include_warnings=include_warnings,
+                )
+                self._huijin_event_study[key] = fresh
+                self._huijin_event_study_ts[key] = time.time()
+                return fresh
+            except duckdb.IOException:
+                if cached is not None and not self._is_stale(ts):
+                    return cached
+                raise
+        return cached
+
     def invalidate(self):
         self._etf_all_ts = 0
         self._stats_ts = 0
         self._tasks_ts = 0
         self._huijin_overview = {}
         self._huijin_overview_ts = {}
+        self._huijin_event_study = {}
+        self._huijin_event_study_ts = {}
 
 
 cache = DataCache(ttl=30)

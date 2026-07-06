@@ -54,8 +54,8 @@ from db.queries import (upsert_kline, query_kline, get_codes_with_kline,
     upsert_data_quality_issues, get_data_quality_issues, refresh_huijin_data_quality_issues,
     upsert_fund_share_events, get_fund_share_events,
     seed_huijin_watch_groups, get_huijin_watch_groups,
-    upsert_cffex_position_rank, get_cffex_position_rank,
-    get_huijin_overview, get_huijin_series)
+    upsert_cffex_position_rank, get_cffex_position_rank, get_cffex_position_meta,
+    get_huijin_overview, get_huijin_series, get_huijin_event_study)
 check('queries import OK', True)
 from db import get_huijin_baseline as exported_get_huijin_baseline
 check('db huijin exports OK', callable(exported_get_huijin_baseline))
@@ -96,6 +96,22 @@ check('huijin baseline before disclosure blocked',
 active_baseline = get_active_huijin_baseline('510300', as_of_date='2026-01-16')
 check('huijin active verified baseline selected',
       active_baseline and active_baseline['baseline_id'] == baseline_id)
+sz_baseline_id = upsert_huijin_baseline({
+    'baseline_id': 'test-baseline-159919-2025Y',
+    'code': '159919',
+    'name': '测试沪深300深市ETF',
+    'report_period': '2025Y',
+    'report_date': '2025-12-31',
+    'disclosure_date': '2026-01-15',
+    's0_total_shares': 1000000000,
+    'h0_total_shares': 200000000,
+    'a_ratio': 0.2,
+    'source_doc_title': '测试深市基金2025年年度报告',
+    'verification_status': 'verified',
+    'verified_at': '2026-01-16 10:00:00',
+    'is_active': True,
+})
+check('huijin sz baseline upsert', get_active_huijin_baseline('159919', as_of_date='2026-01-16')['baseline_id'] == sz_baseline_id)
 try:
     upsert_huijin_baseline({
         'baseline_id': 'bad-ratio',
@@ -129,13 +145,16 @@ check('market calendar trading-list seed',
 run_id = create_data_source_run('test_huijin', 'test_source', run_id='test-huijin-run')
 finish_data_source_run(run_id, 'success', 3)
 execute("INSERT INTO fund (code,name,exchange,huijin_亿,issuer_nm,index_code,index_name,inst_hold_pct) VALUES ('510300','测试沪深300ETF','沪',NULL,'基金','IX300','沪深300',NULL) ON CONFLICT (code) DO UPDATE SET name=EXCLUDED.name, exchange=EXCLUDED.exchange, index_name=EXCLUDED.index_name")
+execute("INSERT INTO fund (code,name,exchange,huijin_亿,issuer_nm,index_code,index_name,inst_hold_pct) VALUES ('159919','测试沪深300深市ETF','深',NULL,'基金','IX300','沪深300',NULL) ON CONFLICT (code) DO UPDATE SET name=EXCLUDED.name, exchange=EXCLUDED.exchange, index_name=EXCLUDED.index_name")
 execute("INSERT INTO daily_snapshot (date,code,total_shares,price) VALUES ('2026-01-09','510300',1000000000,1.0) ON CONFLICT (date,code) DO UPDATE SET total_shares=EXCLUDED.total_shares")
 execute("INSERT INTO daily_snapshot (date,code,total_shares,price) VALUES ('2026-01-15','510300',1200000000,1.0) ON CONFLICT (date,code) DO UPDATE SET total_shares=EXCLUDED.total_shares")
 execute("INSERT INTO daily_snapshot (date,code,total_shares,price) VALUES ('2026-01-16','510300',1400000000,1.0) ON CONFLICT (date,code) DO UPDATE SET total_shares=EXCLUDED.total_shares")
+execute("INSERT INTO daily_snapshot (date,code,total_shares,price) VALUES ('2026-01-16','159919',1100000000,1.0) ON CONFLICT (date,code) DO UPDATE SET total_shares=EXCLUDED.total_shares")
 upsert_daily_snapshot_audit([
     {'date':'2026-01-09','code':'510300','source_name':'sse_etf_scale','source_url':'test','source_date':'2026-01-09','raw_total_shares':1000000000,'raw_unit':'份','normalized_total_shares':1000000000,'run_id':run_id},
     {'date':'2026-01-15','code':'510300','source_name':'sse_etf_scale','source_url':'test','source_date':'2026-01-15','raw_total_shares':1200000000,'raw_unit':'份','normalized_total_shares':1200000000,'run_id':run_id},
     {'date':'2026-01-16','code':'510300','source_name':'sse_etf_scale','source_url':'test','source_date':'2026-01-16','raw_total_shares':1400000000,'raw_unit':'份','normalized_total_shares':1400000000,'run_id':run_id},
+    {'date':'2026-01-16','code':'159919','source_name':'szse_etf_scale','source_url':'test','source_date':'2026-01-16','source_date_inferred':True,'raw_total_shares':1100000000,'raw_unit':'份','normalized_total_shares':1100000000,'run_id':run_id,'quality_flags':'SOURCE_DATE_INFERRED'},
 ])
 check('daily snapshot audit upsert', len(get_daily_snapshot_audit('510300', '2026-01-16')) == 1)
 check('seed watch groups', seed_huijin_watch_groups() >= 15)
@@ -143,6 +162,7 @@ check('watch groups readable', any(g['code'] == '510300' for g in get_huijin_wat
 
 overview = get_huijin_overview(as_of_date='2026-01-16')
 ov_item = next((i for i in overview['items'] if i['code'] == '510300'), None)
+sz_item = next((i for i in overview['items'] if i['code'] == '159919'), None)
 check('huijin overview returns item', ov_item is not None)
 check('huijin overview counts', overview.get('total', 0) >= 1 and overview.get('ok_count', 0) >= 1)
 if ov_item:
@@ -150,9 +170,41 @@ if ov_item:
     check('huijin formula B', abs(ov_item['interval']['b_ratio'] - 1.4) < 1e-9)
     check('huijin formula Y_min', abs(ov_item['interval']['y_min'] - 0.65) < 1e-9)
     check('huijin formula Y_max', abs(ov_item['interval']['y_max'] - 1.4) < 1e-9)
+    check('huijin blocked samples have inactive signal',
+          all(not i.get('ten_x_signal', {}).get('active') for i in overview['items'] if i.get('status') == 'blocked'))
+    check('huijin signal metadata', 'not_triggered_reasons' in ov_item and 'share_change_direction' in ov_item)
+if sz_item:
+    check('huijin source inferred warning',
+          sz_item['source_level'] == 'B' and sz_item['quality_level'] == 'warning' and 'source_date_inferred' in sz_item.get('quality_tags', []),
+          sz_item)
+    check('huijin display rule source inferred', sz_item.get('display_rule') == 'source_date_inferred')
+pool = next((g for g in overview.get('groups', []) if g['group_name'] == '沪深300'), None)
+check('huijin group components', pool and any(c['code'] == '159919' for c in pool.get('components', [])))
+check('huijin group warning codes', pool and '159919' in pool.get('warning_codes', []))
+check('huijin overview issue counts', isinstance(overview.get('quality_issue_counts'), dict))
+check('huijin overview quality summary',
+      overview.get('quality_summary', {}).get('formula_calculable_count', 0) >= 1
+      and 'source_level_counts' in overview.get('quality_summary', {}))
 stale_overview = get_huijin_overview(as_of_date='2026-01-17')
 stale_item = next((i for i in stale_overview['items'] if i['code'] == '510300'), None)
 check('huijin stale S1 marked', stale_item and stale_item['latest_share']['stale'] is True)
+check('huijin stale display rule', stale_item and stale_item.get('display_rule') == 'sse_stale')
+upsert_data_quality_issues([
+    {
+        'issue_type': 'SERIES_WARN_A',
+        'severity': 'warning',
+        'code': '510300',
+        'date': '2026-01-16',
+        'message': '测试同日质量问题A',
+    },
+    {
+        'issue_type': 'SERIES_WARN_B',
+        'severity': 'warning',
+        'code': '510300',
+        'date': '2026-01-16',
+        'message': '测试同日质量问题B',
+    },
+], prefix='series-test')
 series = get_huijin_series('510300', as_of_date='2026-01-16')
 check('huijin series returns rows', len(series['series']) >= 1)
 check('huijin series avoids future disclosure',
@@ -161,6 +213,14 @@ check('huijin series source fields',
       all('source_name' in r and 'quality_flags' in r for r in series['series']))
 check('huijin series strength fields',
       all('share_change_1d' in r and 'share_change_ratio_1d' in r for r in series['series']))
+series_latest = next((r for r in series['series'] if r['date'] == '2026-01-16'), None)
+series_issue_types = set(series_latest.get('quality_issue_types', [])) if series_latest else set()
+check('huijin series keeps same-day quality issues',
+      {'SERIES_WARN_A', 'SERIES_WARN_B'}.issubset(series_issue_types), series_issue_types)
+check('huijin series quality metadata',
+      series_latest and series_latest.get('source_level') == 'A'
+      and series_latest.get('quality_level') == 'warning'
+      and series_latest.get('display_rule') == 'warning')
 check('huijin series baseline history', len(series.get('baseline_history', [])) == 1)
 legacy_count = backfill_huijin_daily_snapshot_audit(run_id='test-legacy-audit')
 legacy_audit = get_daily_snapshot_audit('510300', '2026-01-16', source_name='legacy_daily_snapshot')
@@ -196,6 +256,31 @@ upsert_cffex_position_rank([{
     'run_id': run_id,
 }])
 check('cffex position rank persisted', len(get_cffex_position_rank(date='2026-01-16')) == 1)
+cffex_meta = get_cffex_position_meta(as_of_date='2026-01-16')
+check('cffex meta persisted', cffex_meta.get('latest_date') == '2026-01-16' and cffex_meta.get('contract_count') >= 1)
+
+event_study = get_huijin_event_study(as_of_date='2026-01-16')
+check('huijin event study sample gate',
+      event_study.get('status') == 'sample_insufficient' and event_study.get('message') == '样本不足/仅可观察')
+check('huijin event study windows', set(event_study.get('metrics', {}).keys()) >= {'5', '10', '20', '60'})
+check('huijin event study diagnostics',
+      'sample_gate' in event_study and 'skipped_reasons' in event_study
+      and event_study.get('sample_gate', {}).get('sample_status') == 'sample_insufficient')
+check('huijin event study readiness fields',
+      'partial_backtest_ready' in event_study
+      and 'ready_windows' in event_study
+      and 'insufficient_windows' in event_study
+      and 'ready_windows' in event_study.get('sample_gate', {}))
+upsert_data_quality_issues([{
+    'issue_type': 'GLOBAL_WARN_FOR_BACKTEST',
+    'severity': 'warning',
+    'code': '510300',
+    'date': None,
+    'message': '测试全局 warning 不应污染历史事件研究',
+}], prefix='global-warn-test')
+event_study_global_warn = get_huijin_event_study(as_of_date='2026-01-16')
+check('huijin event study ignores global warning',
+      'GLOBAL_WARN_FOR_BACKTEST' not in (event_study_global_warn.get('skipped_issue_counts') or {}))
 
 from db.sync import sync_all_tables, sync_tables, get_db_paths
 wpath, rpath = get_db_paths()
@@ -214,6 +299,8 @@ check('sync_tables no-op', sync_tables(['market_calendar']) >= 0)
 # ─── 3. API Routes ──────────────────────────────────────────
 print('\n=== 3. API Routes ===')
 from server.app import create_app
+from server.cache import cache
+check('cache huijin event study method', callable(getattr(cache, 'get_huijin_event_study', None)))
 app = create_app()
 with app.test_client() as c:
     routes = [
@@ -228,6 +315,7 @@ with app.test_client() as c:
         ('/api/huijin/audit', 200),
         ('/api/huijin/overview', 200),
         ('/api/huijin/510300/series', 200),
+        ('/api/huijin/backtest', 200),
         ('/api/huijin/cffex-position-rank', 200),
         ('/', 200),
         ('/css/style.css', 200),
@@ -258,6 +346,11 @@ from collector.tasks.cffex_position_rank import CffexPositionRankTask
 check('CffexPositionRankTask OK', True)
 from collector.tasks.market_calendar import MarketCalendarTask
 check('MarketCalendarTask OK', True)
+from collector.tasks.backfill_shares import fill_huijin_missing_shares, shares_match_for_audit
+check('Huijin audit repair matcher',
+      shares_match_for_audit(100000000, 100000000.01)
+      and not shares_match_for_audit(100000000, 90000000))
+check('Huijin missing share filler callable', callable(fill_huijin_missing_shares))
 
 from collector.scheduler import TASK_CLASSES
 check('19 tasks registered', len(TASK_CLASSES) == 19, str(list(TASK_CLASSES.keys())))
@@ -279,10 +372,15 @@ check('app.js exists', os.path.exists(js_path))
 check('app.js non-empty', len(js_bytes) > 40000)
 check('app.js huijin overview loader', 'loadHuijinOverview' in js_text)
 check('app.js cffex helper loader', 'loadCffexPositionRank' in js_text)
-check('app.js huijin renamed preset', '汇金 ETF 份额观察' in js_text and '汇金 ETF 份额异动' in js_text)
+check('app.js huijin renamed preset', '汇金 ETF 份额观察' in js_text and '份额变动强度' in js_text)
 check('app.js huijin detail meta', 'renderHuijinDetailMeta' in js_text)
-old_huijin_labels = ['国家队' + '增仓', '汇金' + '动态调仓']
+check('app.js huijin quality/backtest text',
+      '问题清单' in js_text and '未触发原因' in js_text and 'ETF池贡献拆解' in js_text
+      and '样本不足/仅可观察' in js_text and '复盘门禁' in js_text)
+check('app.js huijin backtest loader', 'loadHuijinBacktest' in js_text and '/api/huijin/backtest' in js_text)
+old_huijin_labels = ['国家队' + '增仓', '汇金' + '动态调仓', '汇金 ETF 份额' + '异动']
 check('app.js no old huijin labels', all(label not in js_text for label in old_huijin_labels))
+check('app.js no huijin position wording', '真实仓位' not in js_text and '确认增仓' not in js_text and '确认减仓' not in js_text)
 
 css_path = os.path.join(os.path.dirname(__file__), '..', 'public', 'css', 'style.css')
 with open(css_path, 'r', encoding='utf-8') as f:

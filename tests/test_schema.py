@@ -1,8 +1,8 @@
 """Test: schema initialization and new tables"""
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-os.environ['ETF_DB_PATH'] = os.path.join(os.path.dirname(__file__), '..', 'data', 'test_etf.duckdb')
-os.environ['ETF_READ_DB_PATH'] = os.environ['ETF_DB_PATH']
+from tests._isolation import use_temp_db
+use_temp_db('etffun_schema_')
 
 from db.schema import init_db
 init_db()

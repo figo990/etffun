@@ -8,6 +8,7 @@ let _selectedPreset = localStorage.getItem('etf_selected_preset') || '';
 let _cachedDataDate = '';
 let huijinOverview = null;
 let cffexPositionRank = [];
+let huijinBacktest = null;
 
 const ALL_COLS = [
   {key:'交易所', label:'所', group:'基础', def:true, srt:true},
@@ -41,7 +42,7 @@ const ALL_COLS = [
   {key:'指数涨跌幅', label:'指数涨跌', group:'其他', def:true, srt:true},
   {key:'基金公司', label:'基金公司', group:'其他', def:false, srt:true},
   {key:'汇金持股_亿', label:'汇金披露(亿份)', group:'其他', def:false, srt:true, tip:'报告期汇金披露持仓份额，非实时'},
-  {key:'比汇金改变比', label:'份额强度', group:'其他', def:true, srt:true, tip:'份额改变额÷汇金披露线索份额'},
+  {key:'比汇金改变比', label:'份额变动强度', group:'其他', def:true, srt:true, tip:'份额改变额÷汇金披露线索份额，仅作公开份额观察'},
   {key:'机构持仓占比', label:'机构占比%', group:'机构', def:false, srt:true, tip:'机构投资者持有比例'},
   {key:'融资余额_亿', label:'融资(亿)', group:'两融', def:false, srt:true, tip:'融资余额'},
   {key:'融资净买入_亿', label:'融资净买(亿)', group:'两融', def:true, srt:true, tip:'融资净买入额'},
@@ -219,7 +220,7 @@ function matchAllRules(d) {
 const PRESET_CATEGORIES = [
   {label:'🏆 质量分层', keys:['核心配置池','优选候选池','初筛候选池']},
   {label:'📊 大类聚焦', keys:['宽基风格精选','行业ETF候选','债券ETF候选','跨境ETF候选']},
-  {label:'⚡ 信号监测', keys:['折价博弈(<-1.5%)','溢价预警(>1.5%)','资金持续流入','大额赎回预警','放量下跌异动','规模激增异动','汇金 ETF 份额异动']},
+  {label:'⚡ 信号监测', keys:['折价博弈(<-1.5%)','溢价预警(>1.5%)','资金持续流入','大额赎回预警','放量下跌异动','规模激增异动','份额变动强度']},
   {label:'📈 资金/估值', keys:['量价背离','恐慌抄底','杠杆看多','汇金 ETF 份额观察','估值低位','估值高位']},
 ];
 
@@ -341,7 +342,7 @@ const FILTER_PRESETS = {
     {logic:'AND', field:'成交额_万', op:'>=', value:'10000'},
     {logic:'AND', field:'规模_亿', op:'>=', value:'5'}
   ],
-  '汇金 ETF 份额异动': [
+  '份额变动强度': [
     {logic:'AND', field:'汇金持股_亿', op:'>', value:'0'},
     {logic:'AND', field:'比汇金改变比', op:'!=', value:'0'}
   ],
@@ -392,14 +393,6 @@ function loadFilterRules() {
   } catch(e) {}
 }
 loadFilterRules();
-const PRESET_RENAMES = {
-  ['汇金' + '动态调仓']: '汇金 ETF 份额异动',
-  ['国家队' + '增仓']: '汇金 ETF 份额观察'
-};
-if (PRESET_RENAMES[_selectedPreset]) {
-  _selectedPreset = PRESET_RENAMES[_selectedPreset];
-  localStorage.setItem('etf_selected_preset', _selectedPreset);
-}
 
 // ====== Render ======
 function render(data) {
@@ -735,7 +728,7 @@ function renderFilterPanel() {
         '恐慌抄底': ['PCR成交量比','融资净买入_亿'],
         '折价博弈(<-1.5%)': ['净值溢价率','IOPV'],
         '溢价预警(>1.5%)': ['净值溢价率','IOPV'],
-        '汇金 ETF 份额异动': ['汇金持股_亿','比汇金改变比'],
+        '份额变动强度': ['汇金持股_亿','比汇金改变比'],
         '汇金 ETF 份额观察': ['机构持仓占比','比汇金改变比'],
       };
       const showCols = PRESET_SHOW_COLS[val.replace(/^p:/, '')];
@@ -793,6 +786,7 @@ async function loadData(){
     loadBondYield();
     loadSectorFlow();
     loadHuijinOverview();
+    loadHuijinBacktest();
     loadCffexPositionRank();
   }catch(e){
     document.getElementById('tbody').innerHTML='<tr><td colspan="'+cc+'" class="error">加载失败: '+e.message+'</td></tr>';
@@ -840,6 +834,17 @@ async function loadHuijinOverview(){
   }catch(e){}
 }
 
+async function loadHuijinBacktest(){
+  try{
+    const r = await fetch('/api/huijin/backtest?windows=5,10,20,60');
+    const d = await r.json();
+    if(d && d.metrics){
+      huijinBacktest = d;
+      renderHuijinWatch();
+    }
+  }catch(e){}
+}
+
 async function loadCffexPositionRank(){
   try{
     const r = await fetch('/api/huijin/cffex-position-rank?limit=50');
@@ -861,7 +866,13 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.querySelector('.table-section').style.display = isHuijin ? 'none' : '';
     document.getElementById('huijinWatchPanel').style.display = isHuijin ? '' : 'none';
     document.querySelector('.filter-title').style.display = isHuijin ? 'none' : '';
-    document.getElementById('exchangeFilter').closest('label').style.display = isHuijin ? 'none' : '';
+    document.getElementById('exchangeFilterLabel').style.display = isHuijin ? 'none' : '';
+    document.getElementById('searchInput').style.display = isHuijin ? 'none' : '';
+    document.getElementById('statsBar').style.display = isHuijin ? 'none' : '';
+    const nb = document.getElementById('northboundInfo');
+    if(nb) nb.style.display = isHuijin ? 'none' : '';
+    const by = document.getElementById('bondYieldInfo');
+    if(by) by.style.display = isHuijin ? 'none' : '';
   });
 });
 
@@ -870,6 +881,74 @@ function firstIssueText(item){
   if(!issues.length) return '';
   const issue = issues[0];
   return issue.message || issue.issue_type || '';
+}
+
+function issueTypeList(item, max=3){
+  const issues = [...(item.blockers || []), ...(item.warnings || [])];
+  return issues.slice(0, max).map(i => i.issue_type || i.message).filter(Boolean).join(' / ');
+}
+
+function qualityLabel(item){
+  if(item.quality_state && item.quality_state.label) return item.quality_state.label;
+  const ql = item.quality_level || '';
+  if(ql === 'data_blocked') return '数据阻断';
+  if(ql === 'warning') return '质量警告';
+  if(ql === 'observable') return '已核验可观察';
+  if(ql === 'preview') return '区间预览';
+  return '待核验';
+}
+
+function sourceLevelText(level){
+  return {
+    'A':'A 交易所直采',
+    'B':'B 源日期推断',
+    'C':'C 交易所滞后',
+    'D':'D legacy/缺失'
+  }[level] || level || 'N/A';
+}
+
+function renderHuijinBacktestPanel(){
+  if(!huijinBacktest) {
+    return '<div class="hjw-table-note">回测/复盘加载中；当前页面先按“样本不足/仅可观察”处理。</div>';
+  }
+  const status = huijinBacktest.status === 'ok' ? '<span class="hjw-ok">样本可复盘</span>' : '<span class="hjw-warn">样本不足/仅可观察</span>';
+  const gate = huijinBacktest.sample_gate || {};
+  const readyWindows = (huijinBacktest.ready_windows || gate.ready_windows || []).map(w => String(w) + '日').join('/');
+  const insufficientWindows = (huijinBacktest.insufficient_windows || gate.insufficient_windows || []).map(w => String(w) + '日').join('/');
+  let html = '<div class="hjt-title"><span class="hjt-dot ok"></span>回测/复盘<span class="hjt-note">事件研究，不生成直接买卖建议</span></div>';
+  html += '<div class="hjw-table-note"><b>方法</b>：仅使用 disclosure_date ≤ 信号日的 verified 基准；T 日生成观察信号，T+1 或后续首个K线收盘价开始评估；默认过滤 blocked/warning；期指与持仓排名不进入核心公式。</div>';
+  html += '<div class="hjw-backtest-summary"><span>状态 ' + status + '</span><span>事件 <b>' + esc(huijinBacktest.event_count || 0) + '</b></span><span>候选点 <b>' + esc(huijinBacktest.candidate_point_count || 0) + '</b></span><span>' + esc(huijinBacktest.message || '') + '</span>' + (readyWindows ? '<span>达标 <b>' + esc(readyWindows) + '</b></span>' : '') + (insufficientWindows ? '<span class="hjw-warn">不足 <b>' + esc(insufficientWindows) + '</b></span>' : '') + '</div>';
+  const explanations = gate.explanation || [];
+  const skippedReasons = huijinBacktest.skipped_reasons || [];
+  const skippedIssues = huijinBacktest.skipped_issue_reasons || [];
+  if(explanations.length || skippedReasons.length || skippedIssues.length){
+    html += '<div class="hjw-issue-strip"><b>复盘门禁</b>';
+    explanations.slice(0, 3).forEach(t => {
+      html += '<span class="hjw-issue-pill">' + esc(t) + '</span>';
+    });
+    skippedReasons.slice(0, 4).forEach(r => {
+      html += '<span class="hjw-issue-pill">' + esc(r.label || r.reason) + ' <b>' + esc(r.count) + '</b></span>';
+    });
+    skippedIssues.slice(0, 4).forEach(r => {
+      html += '<span class="hjw-issue-pill">' + esc(r.issue_type) + ' <b>' + esc(r.count) + '</b></span>';
+    });
+    html += '</div>';
+  }
+  const metrics = huijinBacktest.metrics || {};
+  html += '<div class="hjw-table-wrap"><table class="hjw-table hjw-backtest-table"><thead><tr><th>窗口</th><th>信号次数</th><th>方向命中率</th><th>平均收益</th><th>最大回撤</th><th>状态</th></tr></thead><tbody>';
+  ['5','10','20','60'].forEach(k => {
+    const m = metrics[k] || {};
+    html += `<tr>
+      <td>${esc(k)}日</td>
+      <td class="hjw-num">${m.signal_count == null ? _na() : esc(m.signal_count)}</td>
+      <td class="hjw-num">${m.directional_hit_rate == null ? _na() : fmtPct(m.directional_hit_rate)}</td>
+      <td class="hjw-num">${m.average_return_pct == null ? _na() : fmtPct(m.average_return_pct)}</td>
+      <td class="hjw-num">${m.max_drawdown_pct == null ? _na() : fmtPct(m.max_drawdown_pct)}</td>
+      <td>${m.sample_status === 'ok' ? '<span class="hjw-ok">可复盘</span>' : '<span class="hjw-warn">样本不足</span>'}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  return html;
 }
 
 function huijinOverviewItem(code){
@@ -885,7 +964,6 @@ function renderHuijinDetailMeta(code){
   const source = share.source_name || '待审计';
   const sourceDate = share.source_date || share.date || '';
   const inferred = share.source_date_inferred ? ' 推断' : '';
-  const status = item.can_calculate_interval ? '公式可算' : '待核验';
   let html = '<div class="hjw-detail-section">';
   html += '<div class="hjw-detail-title">汇金 ETF 份额观察</div>';
 
@@ -909,18 +987,17 @@ function renderHuijinDetailMeta(code){
     html += '<span class="hjw-detail-label">区间(Y)</span><span class="hjw-detail-val">' + fmtRatio(iv.y_min) + ' ~ ' + fmtRatio(iv.y_max) + '</span></div>';
 
     if(item.ten_x_signal && item.ten_x_signal.active){
-      html += '<div class="hjw-detail-row hjw-detail-signal">🔴 10倍量信号: ' + (item.ten_x_signal.trigger_reason || '持续' + item.ten_x_signal.consecutive_days + '天') + ', 基准量=' + fmtVol(item.ten_x_signal.baseline_volume) + ', 当前倍率=' + item.ten_x_signal.current_ratio + 'x</div>';
+      html += '<div class="hjw-detail-row hjw-detail-signal">10x份额扩张: ' + esc(item.ten_x_signal.trigger_reason || '持续' + item.ten_x_signal.consecutive_days + '天') + ', 基准量=' + fmtVol(item.ten_x_signal.baseline_volume) + ', 当前倍率=' + esc(item.ten_x_signal.current_ratio) + 'x</div>';
     }
   } else {
     const reason = firstIssueText(item) || '缺少已核验基准或有效份额审计';
-    const extra = (code === '510230' || code === '588000') ? '（需基金定报原文确认汇金持股H0）' : '';
-    html += '<div class="hjw-detail-row hjw-detail-blocked">阻断: ' + esc(reason) + extra + '</div>';
+    html += '<div class="hjw-detail-row hjw-detail-blocked">阻断: ' + esc(reason) + '</div>';
   }
 
   // Source and quality
   const hasDocUrl = base.source_doc_url ? 'Y' : 'N';
   const docLink = base.source_doc_url ? '<a href="' + esc(base.source_doc_url) + '" target="_blank" class="hjw-doc-link">查看公告</a>' : '';
-  const slLabel = {'A':'A 交易所直采','B':'B 交易所推断','C':'C legacy','D':'D legacy推断'}[item.source_level] || item.source_level || 'N/A';
+  const slLabel = sourceLevelText(item.source_level);
   html += '<div class="hjw-detail-row"><span class="hjw-detail-label">份额源</span><span class="hjw-detail-val">' + esc(source) + ' ' + esc(sourceDate) + inferred + ' (' + slLabel + ')</span>';
   if(docLink) html += '<span class="hjw-detail-label">公告</span><span class="hjw-detail-val">' + docLink + '</span>';
   html += '</div>';
@@ -938,6 +1015,15 @@ function renderHuijinDetailMeta(code){
   if(qmarks.length){
     html += '<div class="hjw-detail-row"><span class="hjw-detail-label">质量</span><span class="hjw-detail-val">' + qmarks.join(' ') + '</span></div>';
   }
+  if(item.signal){
+    const sig = item.signal;
+    const rs = (sig.reasons || []).join('；') || '--';
+    const nr = (sig.not_triggered_reasons || []).join('；') || '--';
+    html += '<div class="hjw-detail-row"><span class="hjw-detail-label">观察等级</span><span class="hjw-detail-val">' + esc(sig.observation_label || qualityLabel(item)) + '</span>';
+    html += '<span class="hjw-detail-label">方向</span><span class="hjw-detail-val">' + esc(sig.direction_label || '') + '</span></div>';
+    html += '<div class="hjw-detail-row"><span class="hjw-detail-label">信号原因</span><span class="hjw-detail-val">' + esc(rs) + '</span></div>';
+    html += '<div class="hjw-detail-row"><span class="hjw-detail-label">未触发原因</span><span class="hjw-detail-val">' + esc(nr) + '</span></div>';
+  }
 
   html += '</div>';
   return html;
@@ -952,16 +1038,17 @@ function renderHuijinWatch(){
   const latest_share_date = huijinOverview.latest_share_date || '';
   const tenX = huijinOverview.ten_x_active_count || 0;
   const tenXCodes = huijinOverview.ten_x_active_codes || [];
-  const hasDocUrl = (f) => f.baseline && f.baseline.source_doc_url ? 1 : 0;
-  const hasDocHash = (f) => f.baseline && f.baseline.source_doc_hash ? 1 : 0;
-  const verifiedDoc = items.filter(i => i.quality_levels && i.quality_levels.overall_quality === 'observable').length;
-  const formulaPrev = items.filter(i => i.quality_levels && i.quality_levels.overall_quality === 'preview').length;
-  const dataBlocked = items.filter(i => i.quality_levels && i.quality_levels.overall_quality === 'data_blocked').length;
-  const exchangeSrc = items.filter(i => i.source_level && i.source_level <= 'B').length;
+  const qSummary = huijinOverview.quality_summary || {};
+  const verifiedDoc = qSummary.observable_count ?? items.filter(i => i.quality_levels && i.quality_levels.overall_quality === 'observable').length;
+  const warningDoc = qSummary.warning_count ?? items.filter(i => i.quality_levels && i.quality_levels.overall_quality === 'warning').length;
+  const formulaPrev = qSummary.preview_count ?? items.filter(i => i.quality_levels && i.quality_levels.overall_quality === 'preview').length;
+  const formulaCalc = qSummary.formula_calculable_count ?? items.filter(i => i.can_calculate_interval).length;
+  const dataBlocked = qSummary.data_blocked_count ?? items.filter(i => i.quality_levels && i.quality_levels.overall_quality === 'data_blocked').length;
   const inferred = items.filter(i => i.quality_tags && i.quality_tags.includes('source_date_inferred')).length;
   const stale = items.filter(i => i.latest_share && i.latest_share.stale).length;
-  const auditBlockers = items.filter(i => i.blockers && i.blockers.length).length;
   const hasCffex = cffexPositionRank && cffexPositionRank.length > 0;
+  const qCounts = qSummary.issue_counts || huijinOverview.quality_issue_counts || {};
+  const issueRows = Object.entries(qCounts).sort((a,b) => b[1]-a[1]).slice(0, 8);
   const rows = [...items].sort((a,b) => {
     if(a.can_calculate_interval !== b.can_calculate_interval) return a.can_calculate_interval ? -1 : 1;
     return String(a.code).localeCompare(String(b.code));
@@ -969,17 +1056,24 @@ function renderHuijinWatch(){
 
   let html = '<div class="hjw-head">';
   html += '<div class="hjw-title">汇金 ETF 份额观察</div>';
-  html += `<div class="hjw-summary"><span>公式可算 <b>${verifiedDoc + formulaPrev}</b></span><span>待核验 <b>${dataBlocked}</b></span><span>推断源日期 <b>${inferred}</b></span>${tenX ? `<span class="hjw-signal">10倍量信号 <b>${tenX}</b></span>` : ''}</div>`;
+  html += `<div class="hjw-summary"><span>区间可算 <b>${formulaCalc}</b></span><span>质量警告 <b>${warningDoc}</b></span><span>数据阻断 <b>${dataBlocked}</b></span><span>推断源日期 <b>${inferred}</b></span>${tenX ? `<span class="hjw-signal">10x份额扩张 <b>${tenX}</b></span>` : ''}</div>`;
   html += '<div class="hjw-subhead"><span>系统数据截至 <b>' + esc(as_of) + '</b></span><span>有效份额日 <b>' + esc(latest_share_date) + '</b></span></div>';
 
   // ─── Quality summary bar ───
-  html += '<div class="hjw-quality-bar"><span>已核验可观察 <b>' + verifiedDoc + '</b></span><span>公式可预览 <b>' + formulaPrev + '</b></span><span>数据阻断 <b>' + dataBlocked + '</b></span><span>推断源日期 <b>' + inferred + '</b></span>' + (stale ? '<span class="hjw-warn">stale <b>' + stale + '</b></span>' : '') + '<span>期指 ' + (hasCffex ? '<b class="hjw-ok">有</b>' : '<b class="hjw-warn">无</b>') + '</span></div>';
+  html += '<div class="hjw-quality-bar"><span>已核验可观察 <b>' + verifiedDoc + '</b></span><span>可观察但警告 <b>' + warningDoc + '</b></span><span>区间预览 <b>' + formulaPrev + '</b></span><span>数据阻断 <b>' + dataBlocked + '</b></span><span>推断源日期 <b>' + inferred + '</b></span>' + (stale ? '<span class="hjw-warn">数据滞后 <b>' + stale + '</b></span>' : '') + '<span>期指 ' + (hasCffex ? '<b class="hjw-ok">有</b>' : '<b class="hjw-warn">无</b>') + '</span></div>';
+  if(issueRows.length){
+    html += '<div class="hjw-issue-strip"><b>问题清单</b>';
+    issueRows.forEach(([type, count]) => {
+      html += '<span class="hjw-issue-pill">' + esc(type) + ' <b>' + esc(count) + '</b></span>';
+    });
+    html += '</div>';
+  }
   html += '</div>';
 
   // ─── Table 1: 汇金 ETF 份额观察 ───
-  html += '<div class="hjt-title"><span class="hjt-dot ok"></span>汇金 ETF 份额观察<span class="hjt-note">' + (verifiedDoc + formulaPrev) + '/' + items.length + ' 公式可算，点击代码查看K线+区间趋势</span></div>';
-  html += '<div class="hjw-table-note"><b>字段说明</b>：<b>报告期</b>—汇金持有数据的来源报告（年报/半年报）。<b>披露日</b>—公告日期，此日期前的数据不可用。<b>份额日</b>—ETF总份额S1的最新交易日。<b>状态/质量</b>—公式可算=基准核验+数据完整可进入公式；待核验=缺基准/质量不达标。<b>区间</b>—Y_min~Y_max归一化区间，Y_max=B=S1/S0（当前份额比），Y_min=max(0, B-(1-A))，A=H0/S0（披露日汇金占比）。<b>用法</b>：趋势比单日值重要，持续扩大→增强观察，收窄→减弱观察，稳定/份额下降→观望。持续多日显著增量（约10倍量持续一周）可能是强信号。非实时持仓。<b>变化%</b>—份额相对N个交易日前的变化率。</div>';
-  html += '<div class="hjw-table-wrap"><table class="hjw-table"><thead><tr><th>代码</th><th>状态/质量</th><th>区间/原因</th><th>较基准%</th><th>5日%</th><th>10日%</th><th>20日%</th><th>60日%</th><th>观察组</th><th>报告期</th><th>披露日</th><th>份额日</th></tr></thead><tbody>';
+  html += '<div class="hjt-title"><span class="hjt-dot ok"></span>汇金 ETF 份额观察<span class="hjt-note">' + formulaCalc + '/' + items.length + ' 区间可算，点击代码查看K线+区间趋势</span></div>';
+  html += '<div class="hjw-table-note"><b>字段说明</b>：<b>报告期</b>—汇金持有数据的来源报告（年报/半年报）。<b>披露日</b>—公告日期，此日期前的数据不可用。<b>份额日</b>—ETF总份额S1的最新交易日。<b>状态/质量</b>—可观察=基准核验+数据完整可进入公式；warning=可观察但默认不进回测；blocked=不输出区间和有效信号。<b>区间</b>—Y_min~Y_max归一化区间，Y_max=B=S1/S0（当前份额比），Y_min=max(0, B-(1-A))，A=H0/S0（披露日汇金占比）。<b>用法</b>：份额扩张→增强观察，份额收缩→减弱观察，无明显变化→观望。10x仅表示持续份额扩张，不确认交易。<b>变化%</b>—份额相对N个交易日前的变化率。</div>';
+  html += '<div class="hjw-table-wrap"><table class="hjw-table"><thead><tr><th>代码</th><th>状态/质量</th><th>观察/未触发原因</th><th>区间/原因</th><th>份额变动强度</th><th>5日%</th><th>10日%</th><th>20日%</th><th>60日%</th><th>观察组</th><th>报告期</th><th>披露日</th><th>份额日</th></tr></thead><tbody>';
   const okItems = items.filter(i => i.can_calculate_interval);
   rows.forEach(item => {
     const base = item.baseline || {};
@@ -987,38 +1081,35 @@ function renderHuijinWatch(){
     const groups = (item.watch_groups || []).join(' / ');
     const inferredMark = share.source_date_inferred ? '<span class="hjw-warn">推断</span>' : '';
     const tenXSignal = item.ten_x_signal && item.ten_x_signal.active;
-    // Use API-computed fields
     const ql = (item.quality_levels && item.quality_levels.overall_quality) || 'blocked';
-    const bq = (item.quality_levels && item.quality_levels.baseline_quality) || 'missing';
-    const sq = (item.quality_levels && item.quality_levels.share_quality) || 'missing';
     const sl = item.source_level || 'D';
-    const ol = item.observation_level || 'none';
+    const ol = item.observation_level || 'watch';
     const tags = item.quality_tags || [];
-    const sReasons = item.signal_reasons || [];
     const srcShort = (share.source_name || '').replace('legacy_', '旧.');
-    // Status enum from API
     let statusHtml;
     if(ql === 'data_blocked'){
       statusHtml = '<span class="hjw-block">数据阻断</span>';
+    } else if(ql === 'warning'){
+      statusHtml = '<span class="hjw-warn">质量警告</span>';
     } else if(ql === 'observable'){
       statusHtml = '<span class="hjw-ok">已核验可观察</span>';
     } else if(ql === 'preview'){
-      statusHtml = '<span class="hjw-ok">公式可预览</span>';
+      statusHtml = '<span class="hjw-ok">区间预览</span>';
     } else {
       statusHtml = '<span class="hjw-block">待核验</span>';
     }
     // Observation level
     let obsHtml;
-    if(ol === 'strong') obsHtml = '<span class="hjw-signal-badge">强观察</span>';
+    if(ol === 'strong') obsHtml = '<span class="hjw-signal-badge">增强观察</span>';
     else if(ol === 'enhanced') obsHtml = '<span class="hjw-ok">增强观察</span>';
     else if(ol === 'weakened') obsHtml = '<span class="hjw-warn">减弱观察</span>';
-    else obsHtml = '<span class="hjw-tag">无信号</span>';
+    else if(ol === 'blocked') obsHtml = '<span class="hjw-block">数据阻断</span>';
+    else obsHtml = '<span class="hjw-tag">观望</span>';
     // Quality tags display
     const tagHtml = tags.map(t => {
       const cls = t === 'baseline_verified' ? 'hjw-tag-ok' : t.includes('inferred') || t === 'legacy_source' ? 'hjw-tag-warn' : '';
       return '<span class="hjw-tag ' + cls + '">' + t.replace(/_/g,' ') + '</span>';
     }).join(' ');
-    const slLabel = {'A':'A 交易所直采','B':'B 交易所推断','C':'C legacy','D':'D legacy推断'}[sl] || sl;
     const signalBadge = tenXSignal ? '<span class="hjw-signal-badge">10x</span>' : '';
     let result = esc(firstIssueText(item));
     if(item.can_calculate_interval && item.interval){
@@ -1026,9 +1117,15 @@ function renderHuijinWatch(){
     }
     const chg = (v) => v != null ? '<span class="hjw-chg' + (v < -10 ? ' hjw-chg-bad' : v > 2 ? ' hjw-chg-good' : '') + '">' + v.toFixed(1) + '%</span>' : _na();
     const sourceInfo = srcShort ? '<span class="hjw-source-tag">' + esc(srcShort) + '</span>' : '';
+    const sig = item.signal || {};
+    const notReason = (item.not_triggered_reasons || sig.not_triggered_reasons || []).slice(0, 2).join('；');
+    const sigReason = (item.signal_reasons || sig.reasons || []).slice(0, 2).join('；');
+    const obsTitle = sigReason || notReason || issueTypeList(item) || qualityLabel(item);
+    const obsDetail = sigReason ? sigReason : notReason;
     html += `<tr>
       <td><span class="code clickable" data-code="${esc(item.code)}" data-name="${esc(item.name || '')}">${esc(item.code)}<br><span class="hjw-row-tags">${obsHtml}</span></span></td>
-      <td>${statusHtml} ${signalBadge}<br><span class="hjw-row-tags">${tagHtml}</span></td>
+      <td>${statusHtml} ${signalBadge}<br><span class="hjw-row-tags"><span class="hjw-source-tag">${esc(sourceLevelText(sl))}</span>${tagHtml}</span></td>
+      <td class="hjw-result" title="${esc(obsTitle)}">${obsDetail ? esc(obsDetail) : _na()}</td>
       <td class="hjw-result" title="${esc(result)}">${result || _na()}</td>
       <td class="hjw-num">${item.vs_baseline_pct != null ? chg(item.vs_baseline_pct) : _na()}</td>
       <td class="hjw-num">${chg(item.share_change_ratio_5d)}</td>
@@ -1057,6 +1154,7 @@ function renderHuijinWatch(){
       <td><b>平均(${okItems.length}只)</b></td>
       <td></td>
       <td></td>
+      <td></td>
       <td class="hjw-num">${chgS(avgVsBase)}</td>
       <td class="hjw-num">${chgS(avg5d)}</td>
       <td class="hjw-num">${chgS(avg10d)}</td>
@@ -1069,37 +1167,41 @@ function renderHuijinWatch(){
 
   // ─── Table 2: ETF 池份额观察 ───
   if(huijinOverview.groups && huijinOverview.groups.length){
-    html += '<div class="hjt-title"><span class="hjt-dot ok"></span>ETF池份额观察<span class="hjt-note">按跟踪指数归并，仅含汇金持仓ETF</span></div>';
-    html += '<div class="hjw-table-note"><b>说明</b>：将跟踪同一指数的多只汇金持仓ETF合并观察（如沪深300含510300/159919/510330三只）。<b>总份额</b>—组内所有ETF当前份额之和。<b>变化%</b>—合并份额相对N个交易日前的变化率。合并口径不代表单一汇金账户仓位，仅用于观察同指数ETF的整体份额趋势。</div>';
-    html += '<div class="hjw-table-wrap"><table class="hjw-table hjw-pool-table"><thead><tr><th>观察组</th><th>代码</th><th>总份额(亿)</th><th>5日%</th><th>10日%</th><th>20日%</th><th>60日%</th></tr></thead><tbody>';
+    html += '<div class="hjt-title"><span class="hjt-dot ok"></span>ETF池贡献拆解<span class="hjt-note">按跟踪指数归并，仅含汇金持仓ETF</span></div>';
+    html += '<div class="hjw-table-note"><b>说明</b>：将跟踪同一指数的多只汇金持仓ETF合并观察。<b>贡献</b>—组内单只ETF对5日份额变动的贡献占比。blocked/warning 成分单独标注。合并口径不代表单一账户持有比例，仅用于观察同指数ETF的整体份额趋势。</div>';
+    html += '<div class="hjw-table-wrap"><table class="hjw-table hjw-pool-table"><thead><tr><th>观察组/成分</th><th>代码</th><th>状态</th><th>总份额(亿)</th><th>权重</th><th>5日%</th><th>20日%</th><th>5日贡献</th></tr></thead><tbody>';
     huijinOverview.groups.forEach(g => {
       const codes = (g.codes || []).join(' / ');
       const chg = (v) => v != null ? '<span class="hjw-chg' + (v < -10 ? ' hjw-chg-bad' : v > 2 ? ' hjw-chg-good' : '') + '">' + v.toFixed(1) + '%</span>' : _na();
+      const warnNote = [];
+      if(g.blocked_codes && g.blocked_codes.length) warnNote.push('blocked ' + g.blocked_codes.join('/'));
+      if(g.warning_codes && g.warning_codes.length) warnNote.push('warning ' + g.warning_codes.join('/'));
       html += `<tr class="hjw-pool-group">
         <td><b>${esc(g.group_name)}</b></td>
         <td>${esc(codes)}</td>
+        <td>${warnNote.length ? '<span class="hjw-warn">' + esc(warnNote.join('；')) + '</span>' : '<span class="hjw-ok">可观察</span>'}</td>
         <td class="hjw-num">${g.latest_total_shares ? (g.latest_total_shares / 1e8).toFixed(2) : _na()}</td>
+        <td class="hjw-num">100%</td>
         <td class="hjw-num">${chg(g.share_change_ratio_5d)}</td>
-        <td class="hjw-num">${chg(g.share_change_ratio_10d)}</td>
         <td class="hjw-num">${chg(g.share_change_ratio_20d)}</td>
-        <td class="hjw-num">${chg(g.share_change_ratio_60d)}</td>
+        <td class="hjw-num">${_na()}</td>
       </tr>`;
-      // Intra-group contribution breakdown
-      const gCodes = g.codes || [];
-      const groupItems = items.filter(i => gCodes.includes(i.code));
-      groupItems.forEach(gi => {
-        const giShare = gi.latest_share || {};
-        const giShares = giShare.total_shares || 0;
-        const giPct = g.latest_total_shares > 0 ? (giShares / g.latest_total_shares * 100).toFixed(1) : '--';
+      (g.components || []).forEach(gi => {
+        const giShares = gi.latest_total_shares || 0;
+        const giPct = gi.share_weight_pct != null ? gi.share_weight_pct.toFixed(1) : '--';
+        const state = gi.quality_filter_level === 'blocked' ? '<span class="hjw-block">blocked</span>' :
+          gi.quality_filter_level === 'warning' ? '<span class="hjw-warn">warning</span>' : '<span class="hjw-ok">ok</span>';
+        const contrib = gi.change_contribution_5d_pct != null ? gi.change_contribution_5d_pct.toFixed(1) + '%' : '--';
         const giChg = (v) => v != null ? '<span class="hjw-chg' + (v < -10 ? ' hjw-chg-bad' : v > 2 ? ' hjw-chg-good' : '') + '">' + v.toFixed(1) + '%</span>' : _na();
         html += `<tr class="hjw-pool-child">
-          <td class="hjw-pool-indent">└ ${esc(gi.name || gi.code)}</td>
+          <td class="hjw-pool-indent">${esc(gi.name || gi.code)}</td>
           <td>${esc(gi.code)}</td>
-          <td class="hjw-num">${giShares > 0 ? (giShares / 1e8).toFixed(2) : _na()}<span class="hjw-pool-share">${giPct}%</span></td>
+          <td>${state}</td>
+          <td class="hjw-num">${giShares > 0 ? (giShares / 1e8).toFixed(2) : _na()}</td>
+          <td class="hjw-num"><span class="hjw-pool-share">${giPct}%</span></td>
           <td class="hjw-num">${giChg(gi.share_change_ratio_5d)}</td>
-          <td class="hjw-num">${giChg(gi.share_change_ratio_10d)}</td>
           <td class="hjw-num">${giChg(gi.share_change_ratio_20d)}</td>
-          <td class="hjw-num">${giChg(gi.share_change_ratio_60d)}</td>
+          <td class="hjw-num">${esc(contrib)}</td>
         </tr>`;
       });
     });
@@ -1119,11 +1221,17 @@ function renderHuijinWatch(){
     html += '</div>';
   }
 
+  html += renderHuijinBacktestPanel();
+
   // ─── Table 3: 期指辅助 ───
   html += '<div class="hjt-title"><span class="hjt-dot ok"></span>期指辅助<span class="hjt-note">中金所排名，不进入核心公式，仅辅助验证</span></div>';
+  const cffexMeta = huijinOverview.cffex_meta || {};
   if(cffexPositionRank.length){
     const rankRows = cffexPositionRank.slice(0, 20);
-    html += '<div class="hjw-table-note"><b>说明</b>：中金所股指期货成交持仓排名。<b>持买单量↑ + ETF份额↑</b>→需交叉验证，可能配合。<b>持卖单量异常↑</b>→套保盘增加，风险偏好可能下降。以上不能机械等同于汇金操作。当前展示最新交易日数据，不显示历史趋势。</div>';
+    const metaLine = cffexMeta.available
+      ? `日期 <b>${esc(cffexMeta.latest_date || '')}</b>，合约覆盖 <b>${esc(cffexMeta.contract_count || 0)}</b> 个${cffexMeta.stale ? '，<span class="hjw-warn">滞后</span>' : '，<span class="hjw-ok">当前</span>'}`
+      : '<span class="hjw-warn">暂无期指辅助数据</span>';
+    html += '<div class="hjw-table-note"><b>说明</b>：中金所股指期货成交持仓排名，仅作辅助验证，不进入核心公式。' + metaLine + '。ETF份额与期指持仓只能交叉观察，不能机械等同于具体主体操作。</div>';
     html += '<div class="hjw-table-wrap"><table class="hjw-table hjw-cffex-table"><thead><tr><th>合约</th><th>类型</th><th>排名</th><th>会员</th><th>数量</th><th>变化</th></tr></thead><tbody>';
     rankRows.forEach(r => {
       html += `<tr>
@@ -1137,7 +1245,7 @@ function renderHuijinWatch(){
     });
     html += '</tbody></table></div>';
   } else {
-    html += '<div class="hjw-table-note" style="color:#718096">期指辅助暂无数据（交易日18:30后更新），不影响核心公式，仅影响辅助验证。</div>';
+    html += '<div class="hjw-table-note" style="color:#718096">期指辅助暂无数据（交易日18:30后更新），不影响核心公式，仅影响辅助验证。页面仍按汇金 ETF 份额观察处理。</div>';
   }
 
   panel.innerHTML = html;
@@ -1204,6 +1312,7 @@ function _sfRender(){
   const rows = Object.values(merged);
   if(!rows.length){ wrap.innerHTML='<div class="sf-empty">暂无数据</div>'; return; }
 
+  const periodKeys = ['1d','3d','5d','10d','20d'];
   const maxAbsByPeriod = {};
   periodKeys.forEach(p => {
     maxAbsByPeriod[p] = Math.max(...rows.map(s => Math.abs(Number(s[p] || 0))), 1);
@@ -1216,7 +1325,6 @@ function _sfRender(){
   });
 
   // Column headers: 行业, then each period (clickable for sort)
-  const periodKeys = ['1d','3d','5d','10d','20d'];
   let html = '<table class="sf-table"><tr><th class="sf-th" style="text-align:left">行业</th>';
   periodKeys.forEach(p => {
     const active = p === _sfSortPeriod;
@@ -1286,10 +1394,15 @@ function applySectorFilter(sector){
 }
 
 // ====== ETF Detail Panel ======
+let _detailFetchController = null;
+
 function openDetail(code, name){
   const modal = document.getElementById('detailModal');
   document.getElementById('detailTitle').textContent = code + ' ' + (name || '');
   modal.style.display = 'flex';
+  // Cancel previous fetch
+  if(_detailFetchController) _detailFetchController.abort();
+  _detailFetchController = new AbortController();
   // Reset previous state
   const canvas = document.getElementById('klineCanvas');
   const ctx = canvas.getContext('2d');
@@ -1309,12 +1422,22 @@ document.addEventListener('keydown', (e) => {
   if(e.key === 'Escape') closeDetail();
 });
 function closeDetail(){
+  if(_detailFetchController) _detailFetchController.abort();
+  _detailFetchController = null;
+  const canvas = document.getElementById('klineCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  document.getElementById('detailMeta').innerHTML = '';
+  const wrap = document.getElementById('huijinTrendWrap');
+  if(wrap) wrap.style.display = 'none';
   document.getElementById('detailModal').style.display = 'none';
 }
 
 async function fetchKlineAndRender(code, name){
+  const controller = _detailFetchController;
+  if(!controller) return;
   try{
-    const r = await fetch('/api/etf/kline?code=' + code + '&limit=120');
+    const r = await fetch('/api/etf/kline?code=' + code + '&limit=120', {signal: controller.signal});
     const data = await r.json();
     if(!data || !data.length){
       document.getElementById('detailMeta').innerHTML = '<span class="na">K线数据暂不可用（backfill进行中）</span>';
@@ -1358,7 +1481,7 @@ async function fetchKlineAndRender(code, name){
     if(hi && hi.can_calculate_interval && hi.interval){
       wrap.style.display = '';
       try{
-        const sr = await fetch('/api/huijin/' + code + '/series?limit=90');
+        const sr = await fetch('/api/huijin/' + code + '/series?limit=90', {signal: controller.signal});
         const sd = await sr.json();
         if(sd && sd.series && sd.series.length > 1){
           renderHuijinTrendChart(sd.series, sd.baseline);
@@ -1372,6 +1495,7 @@ async function fetchKlineAndRender(code, name){
       wrap.style.display = 'none';
     }
   }catch(e){
+    if(e.name === 'AbortError') return;
     const wrap = document.getElementById('huijinTrendWrap');
     if(wrap) wrap.style.display = 'none';
     document.getElementById('detailMeta').innerHTML = '<span class="error" style="padding:8px">K线数据加载失败，请确认服务器运行中</span>';

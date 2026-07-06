@@ -31,8 +31,8 @@ from .queries import (
     upsert_data_quality_issues, get_data_quality_issues, refresh_huijin_data_quality_issues,
     upsert_fund_share_events, get_fund_share_events,
     seed_huijin_watch_groups, get_huijin_watch_groups,
-    upsert_cffex_position_rank, get_cffex_position_rank,
-    get_huijin_overview, get_huijin_series,
+    upsert_cffex_position_rank, get_cffex_position_rank, get_cffex_position_meta,
+    get_huijin_overview, get_huijin_series, get_huijin_event_study,
 )
 from .schema import init_db
 from .sync import sync_all_tables, sync_tables

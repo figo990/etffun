@@ -344,6 +344,11 @@ td.cell-code{position:relative}
 /* Quality bar */
 .hjw-quality-bar{display:flex;gap:10px;flex-wrap:wrap;padding:4px 10px;font-size:11px;color:#4a5568;background:#edf2f7;border-bottom:1px solid #e2e8f0}
 .hjw-quality-bar b{font-weight:700;color:#1a202c}
+.hjw-issue-strip{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 10px;font-size:11px;color:#4a5568;background:#fff;border-bottom:1px solid #e2e8f0}
+.hjw-issue-pill{display:inline-flex;align-items:center;gap:3px;padding:1px 5px;border:1px solid #fbd38d;background:#fffbeb;color:#7b341e;border-radius:2px}
+.hjw-backtest-summary{display:flex;gap:12px;flex-wrap:wrap;padding:6px 10px;font-size:12px;background:#f7fafc;border-bottom:1px solid #e2e8f0;color:#4a5568}
+.hjw-backtest-summary b{color:#1a202c}
+.hjw-backtest-table td,.hjw-backtest-table th{font-size:11px}
 /* Tags */
 .hjw-tag{display:inline-block;padding:0 4px;border-radius:2px;background:#edf2f7;color:#4a5568;font-size:10px;line-height:16px;white-space:nowrap}
 .hjw-tag-ok{background:#e6fffa;color:#2f855a}

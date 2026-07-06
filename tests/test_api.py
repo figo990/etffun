@@ -1,8 +1,8 @@
 """Test: queries imports and API routes"""
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-os.environ['ETF_DB_PATH'] = os.path.join(os.path.dirname(__file__), '..', 'data', 'test_etf.duckdb')
-os.environ['ETF_READ_DB_PATH'] = os.environ['ETF_DB_PATH']
+from tests._isolation import use_temp_db
+use_temp_db('etffun_api_')
 
 # Test queries import
 from db.queries import (
@@ -14,7 +14,7 @@ from db.queries import (
     get_all_codes,
     upsert_huijin_baseline, get_huijin_baseline, get_active_huijin_baseline,
     get_huijin_baseline_holders, seed_huijin_baselines_from_config,
-    get_huijin_overview, get_huijin_series, get_cffex_position_rank,
+    get_huijin_overview, get_huijin_series, get_huijin_event_study, get_cffex_position_rank,
 )
 print('queries.py imports OK')
 
@@ -60,6 +60,10 @@ with app.test_client() as c:
     r = c.get('/api/huijin/510300/series')
     assert r.status_code == 200
     print(f'/api/huijin/510300/series: {r.status_code} {len(r.data)}B')
+
+    r = c.get('/api/huijin/backtest')
+    assert r.status_code == 200
+    print(f'/api/huijin/backtest: {r.status_code} {len(r.data)}B')
 
     r = c.get('/api/huijin/cffex-position-rank')
     assert r.status_code == 200

@@ -534,6 +534,16 @@ def seed_huijin_baselines_from_config():
 
     count = 0
     for code, info in holdings.items():
+        info = info or {}
+        item_disclosure_date = _nullable_norm_date(info.get('披露日期')) or disclosure_date
+        baseline_id = f"huijin-config-{code}-{(update_date or 'unknown').replace('-', '')}"
+        if item_disclosure_date:
+            execute("""
+                UPDATE huijin_baseline
+                SET disclosure_date = ?
+                WHERE baseline_id = ?
+                  AND (disclosure_date IS NULL OR disclosure_date < ?)
+            """, [item_disclosure_date, baseline_id, item_disclosure_date])
         # Skip if a verified baseline already exists for this code
         existing = query_one("""
             SELECT 1 FROM huijin_baseline
@@ -551,15 +561,11 @@ def seed_huijin_baselines_from_config():
         """, [code], read_only=False)
         if df is not None and not df.empty:
             continue
-            continue
-        info = info or {}
         h_yi = _nullable_float(info.get('汇金总持股(亿)'))
         h0 = h_yi * 1e8 if h_yi is not None else None
         # Determine if this holding has verified data (has both holding value and source doc URL)
         has_h0 = h_yi is not None
         has_doc = bool(info.get('来源公告'))
-        is_verified = has_h0 and has_doc
-        baseline_id = f"huijin-config-{code}-{(update_date or 'unknown').replace('-', '')}"
         doc_url = info.get('来源公告')
         s_yi = _nullable_float(info.get('披露日总份额(亿)'))
         s0 = s_yi * 1e8 if s_yi is not None else None
@@ -572,7 +578,7 @@ def seed_huijin_baselines_from_config():
             'name': info.get('名称'),
             'report_period': report_period,
             'report_date': update_date,
-            'disclosure_date': disclosure_date,
+            'disclosure_date': item_disclosure_date,
             's0_total_shares': s0,
             'h0_total_shares': h0,
             'a_ratio': a_ratio_val,
@@ -1223,6 +1229,60 @@ def get_cffex_position_rank(date=None, contract=None, limit=200):
     """, params))
 
 
+def get_cffex_position_meta(as_of_date=None):
+    if not _table_exists('cffex_position_rank'):
+        return {
+            'available': False,
+            'latest_date': None,
+            'contract_count': 0,
+            'contracts': [],
+            'stale': True,
+            'note': '期指辅助暂无数据，仅影响辅助验证',
+        }
+    latest = query_one("""
+        SELECT MAX(date) AS latest_date,
+               COUNT(*) AS rows_count,
+               COUNT(DISTINCT contract) AS contract_count
+        FROM cffex_position_rank
+    """) or {}
+    latest_date = latest.get('latest_date')
+    if not latest_date:
+        return {
+            'available': False,
+            'latest_date': None,
+            'contract_count': 0,
+            'contracts': [],
+            'stale': True,
+            'note': '期指辅助暂无数据，仅影响辅助验证',
+        }
+    contracts = _to_records(query("""
+        SELECT contract, COUNT(*) AS rows_count
+        FROM cffex_position_rank
+        WHERE date = ?
+        GROUP BY contract
+        ORDER BY contract
+    """, [latest_date]))
+    source_rows = _to_records(query("""
+        SELECT DISTINCT source_name
+        FROM cffex_position_rank
+        WHERE date = ?
+        ORDER BY source_name
+    """, [latest_date]))
+    expected_date = infer_trading_date(as_of_date or latest_date, exchange='CFFEX')
+    stale = latest_date < expected_date
+    return {
+        'available': True,
+        'latest_date': latest_date,
+        'expected_trading_date': expected_date,
+        'contract_count': latest.get('contract_count') or len(contracts),
+        'row_count': latest.get('rows_count') or 0,
+        'contracts': [r.get('contract') for r in contracts],
+        'source_names': [r.get('source_name') for r in source_rows if r.get('source_name')],
+        'stale': stale,
+        'note': '期指与中金所持仓排名仅作辅助验证，不进入核心公式',
+    }
+
+
 def _huijin_config_holdings():
     path = os.path.join(BASE_DIR, 'huijin_config.json')
     if not os.path.exists(path):
@@ -1276,6 +1336,14 @@ def _open_quality_for(code, date=None):
     return [r for r in rows if r.get('date') in (None, date_s)]
 
 
+def _quality_issues_by_date(issues):
+    by_date = {}
+    for issue in issues or []:
+        key = _nullable_norm_date(issue.get('date')) if issue.get('date') else None
+        by_date.setdefault(key, []).append(issue)
+    return by_date
+
+
 def _latest_valid_share(code, as_of_date, exchange):
     as_of = _nullable_norm_date(as_of_date)
     rows = _to_records(query("""
@@ -1297,6 +1365,14 @@ def _latest_valid_share(code, as_of_date, exchange):
             'stale': row['date'] != as_of,
         }
     return None
+
+
+def _default_huijin_as_of_date():
+    """Use the latest known trading day instead of a weekend snapshot date."""
+    max_date = get_max_date()
+    if max_date:
+        return infer_trading_date(max_date, exchange='SSE')
+    return infer_trading_date(datetime.now().strftime('%Y-%m-%d'), exchange='SSE')
 
 
 def _share_changes(code, share_date, baseline=None):
@@ -1396,6 +1472,15 @@ def _validate_huijin_inputs(code, baseline, share, skip_quality=False, skip_trad
         ))
 
     audit = share.get('audit')
+    if share.get('stale'):
+        stale_type = 'SSE_SOURCE_STALE' if audit and str(audit.get('source_name') or '').startswith('sse') else 'STALE_SHARE_DATE'
+        warnings.append(_issue(
+            stale_type,
+            'warning',
+            '份额数据滞后于观察日期，按最近有效交易日仅作滞后观察',
+            code=code,
+            date=share.get('date'),
+        ))
     if not audit:
         blockers.append(_issue(
             'MISSING_S1_AUDIT',
@@ -1484,10 +1569,28 @@ def _calculate_huijin_interval(baseline, share):
 
 
 def _detect_ten_x_signal(code, as_of_date, lookback=30, baseline_window=20, threshold=10, consecutive=7):
-    """Detect if share changes exceed threshold * baseline for N consecutive days."""
+    """Detect positive share expansion exceeding threshold * baseline for N recent trading days."""
+    empty = {
+        'active': False,
+        'effective': False,
+        'consecutive_days': 0,
+        'baseline_volume': None,
+        'threshold': threshold,
+        'threshold_consecutive': consecutive,
+        'current_ratio': None,
+        'max_recent_ratio': None,
+        'trigger_reason': None,
+        'not_triggered_reasons': [],
+        'direction': 'unknown',
+    }
     try:
         exchange = _code_exchange(code)
-        rows = _to_records(query("""
+        has_calendar = _table_exists('market_calendar') and query_one(
+            "SELECT COUNT(*) AS cnt FROM market_calendar WHERE exchange=? AND is_trading_day=TRUE LIMIT 1",
+            [exchange],
+        )
+        if has_calendar and has_calendar.get('cnt', 0) > 0:
+            rows = _to_records(query("""
             SELECT s.date, s.total_shares
             FROM daily_snapshot s
             JOIN market_calendar mc ON mc.date = s.date AND mc.exchange = ? AND mc.is_trading_day = TRUE
@@ -1495,38 +1598,77 @@ def _detect_ten_x_signal(code, as_of_date, lookback=30, baseline_window=20, thre
             ORDER BY s.date DESC
             LIMIT ?
         """, [exchange, str(code), _nullable_norm_date(as_of_date), lookback + 5]))
-        if len(rows) < lookback:
-            return None
+        else:
+            rows = _to_records(query("""
+                SELECT date, total_shares
+                FROM daily_snapshot
+                WHERE code = ? AND total_shares IS NOT NULL AND date <= ?
+                  AND strftime(date, '%w') NOT IN ('0', '6')
+                ORDER BY date DESC
+                LIMIT ?
+            """, [str(code), _nullable_norm_date(as_of_date), lookback + 5]))
+        if len(rows) < baseline_window + consecutive + 1:
+            result = dict(empty)
+            result['not_triggered_reasons'] = ['历史份额样本不足，无法建立10x基准量']
+            return result
         rows.reverse()
-        # Calculate absolute daily changes
-        abs_changes = []
+        signed_changes = []
         for i in range(1, len(rows)):
             if rows[i-1].get('total_shares') and rows[i].get('total_shares'):
-                change = abs(float(rows[i]['total_shares']) - float(rows[i-1]['total_shares']))
-                abs_changes.append((rows[i]['date'], change))
-        if len(abs_changes) < baseline_window + consecutive:
-            return None
-        # Baseline = median of first `baseline_window` absolute changes
-        baseline_values = sorted(c for _, c in abs_changes[-baseline_window-consecutive:-consecutive])
+                change = float(rows[i]['total_shares']) - float(rows[i-1]['total_shares'])
+                signed_changes.append((rows[i]['date'], change))
+        if len(signed_changes) < baseline_window + consecutive:
+            result = dict(empty)
+            result['not_triggered_reasons'] = ['有效份额变化样本不足，无法判断10x']
+            return result
+        baseline_values = sorted(
+            abs(c) for _, c in signed_changes[-baseline_window-consecutive:-consecutive]
+            if c != 0
+        )
         if not baseline_values:
-            return None
+            result = dict(empty)
+            result['not_triggered_reasons'] = ['基准期份额变化为0，无法计算10x倍率']
+            result['direction'] = 'flat'
+            return result
         baseline = baseline_values[len(baseline_values) // 2]
         if baseline <= 0:
-            return None
-        # Check last `consecutive` days
-        recent = abs_changes[-consecutive:]
-        flagged = [(d, c / baseline) for d, c in recent if c > baseline * threshold]
+            result = dict(empty)
+            result['not_triggered_reasons'] = ['基准量无效，无法计算10x倍率']
+            return result
+        recent = signed_changes[-consecutive:]
+        positive_days = [(d, c / baseline) for d, c in recent if c > baseline * threshold]
+        negative_days = [(d, abs(c) / baseline) for d, c in recent if c < -baseline * threshold]
+        recent_sum = sum(c for _, c in recent)
+        if recent_sum > baseline:
+            direction = 'expansion'
+        elif recent_sum < -baseline:
+            direction = 'contraction'
+        else:
+            direction = 'flat'
+        active = len(positive_days) >= consecutive
+        not_triggered = []
+        if not active:
+            if negative_days:
+                not_triggered.append('最近存在大额份额收缩，10x增强观察不触发')
+            if len(positive_days) < consecutive:
+                not_triggered.append(f'仅{len(positive_days)}/{consecutive}个交易日超过{threshold}倍基准量')
         return {
-            'active': len(flagged) >= consecutive,
-            'consecutive_days': len(flagged),
+            'active': active,
+            'effective': active,
+            'consecutive_days': len(positive_days),
             'baseline_volume': round(baseline, 2),
             'threshold': threshold,
             'threshold_consecutive': consecutive,
-            'current_ratio': round(flagged[-1][1], 1) if flagged else None,
-            'trigger_reason': f"连续{len(flagged)}/{consecutive}天超过{threshold}倍基准量" if len(flagged) < consecutive else f"连续{len(flagged)}天超过{threshold}倍基准量，已触发",
+            'current_ratio': round(positive_days[-1][1], 1) if positive_days else None,
+            'max_recent_ratio': round(max([abs(c) / baseline for _, c in recent] or [0]), 1),
+            'trigger_reason': f"连续{len(positive_days)}个交易日超过{threshold}倍基准量" if active else None,
+            'not_triggered_reasons': not_triggered,
+            'direction': direction,
         }
     except Exception:
-        return None
+        result = dict(empty)
+        result['not_triggered_reasons'] = ['10x信号计算失败，已降级为观望']
+        return result
 
 
 def _pool_change_ratio(group_items, change_key, total_shares):
@@ -1552,7 +1694,8 @@ def _audit_item_additional_issues(code, baseline, share, audit):
         s1 = float(share['total_shares'])
         if h0 > 0 and s1 < h0 * 0.5:
             issues.append(_issue('CURRENT_SHARES_BELOW_CONFIG_HOLDING', 'warning',
-                                f'当前份额({s1/1e8:.2f}亿)低于汇金披露持仓({h0/1e8:.2f}亿)的50%, 份额大幅缩水', code=code))
+                                f'当前份额({s1/1e8:.2f}亿)低于汇金披露持仓({h0/1e8:.2f}亿)的50%, 份额大幅缩水',
+                                code=code, date=share.get('date')))
     
     # NON_TRADING_DATE on share data
     if share.get('date'):
@@ -1572,8 +1715,60 @@ def _audit_item_additional_issues(code, baseline, share, audit):
     return issues
 
 
+def _dedupe_strings(values):
+    result = []
+    seen = set()
+    for value in values or []:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
+
+
+def _dedupe_issues(issues):
+    result = []
+    seen = set()
+    for issue in issues or []:
+        key = (
+            issue.get('issue_type'),
+            issue.get('severity'),
+            issue.get('code'),
+            issue.get('date'),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(issue)
+    return result
+
+
+def _audit_issues_by_code():
+    try:
+        audit = audit_huijin_data(include_persistent=True)
+    except Exception:
+        return {}, [], {}
+    by_code = {}
+    global_issues = []
+    for issue in _dedupe_issues((audit.get('issues') or []) + (audit.get('persistent_issues') or [])):
+        code = issue.get('code')
+        if code:
+            by_code.setdefault(str(code), []).append(issue)
+        else:
+            global_issues.append(issue)
+    return by_code, global_issues, audit.get('summary') or {}
+
+
+def _quality_filter_level(blockers, warnings):
+    if blockers:
+        return 'blocked'
+    if warnings:
+        return 'warning'
+    return 'ok'
+
+
 def _compute_source_level(share, audit):
-    """A=交易所直采, 源日期明确, 非stale | B=交易所直采, 源日期推断 | C=交易所直采但stale | D=legacy/异常/断档"""
+    """A=交易所直采且日期明确 | B=交易所直采但源日期推断 | C=交易所源滞后 | D=legacy/缺失/异常"""
     if not share or not audit:
         return 'D'
     src = audit.get('source_name', '')
@@ -1582,10 +1777,10 @@ def _compute_source_level(share, audit):
     is_legacy = 'legacy' in src
     if is_legacy:
         return 'D'
-    if inferred:
-        return 'B'
     if is_stale:
         return 'C'
+    if inferred:
+        return 'B'
     return 'A'
 
 
@@ -1611,9 +1806,10 @@ def _compute_quality_level(blockers, warnings, baseline, share, audit):
         elif 'sse' in src or 'szse' in src:
             share_quality = 'exchange_inferred' if audit.get('source_date_inferred') else 'exchange_direct'
 
-    # Overall quality
     if blockers:
         overall_quality = 'data_blocked'
+    elif warnings:
+        overall_quality = 'warning'
     elif baseline_quality in ('verified', 'verified_minimal') and share_quality in ('exchange_direct', 'exchange_inferred'):
         overall_quality = 'observable'
     elif baseline_quality in ('verified', 'verified_minimal'):
@@ -1625,26 +1821,126 @@ def _compute_quality_level(blockers, warnings, baseline, share, audit):
         'baseline_quality': baseline_quality,
         'share_quality': share_quality,
         'overall_quality': overall_quality,
+        'quality_filter_level': _quality_filter_level(blockers, warnings),
+        'has_blockers': bool(blockers),
+        'has_warnings': bool(warnings),
+    }
+
+
+def _compute_share_direction(changes):
+    chg5d = changes.get('share_change_ratio_5d')
+    chg20d = changes.get('share_change_ratio_20d')
+    basis = chg20d if chg20d is not None else chg5d
+    if basis is None:
+        return 'unknown'
+    if basis > 1:
+        return 'expansion'
+    if basis < -1:
+        return 'contraction'
+    return 'flat'
+
+
+def _compute_huijin_signal(changes, interval, ten_x_signal, blockers=None, warnings=None):
+    blockers = blockers or []
+    warnings = warnings or []
+    direction = _compute_share_direction(changes)
+    chg5d = changes.get('share_change_ratio_5d')
+    chg20d = changes.get('share_change_ratio_20d')
+    reasons = []
+    not_triggered = []
+
+    if blockers:
+        return {
+            'effective': False,
+            'observation_level': 'blocked',
+            'observation_label': '数据阻断',
+            'direction': 'unknown',
+            'direction_label': '数据阻断',
+            'reasons': ['存在阻断问题，样本不得输出有效信号'],
+            'not_triggered_reasons': [b.get('message') or b.get('issue_type') for b in blockers[:3]],
+        }
+
+    if ten_x_signal and ten_x_signal.get('active'):
+        reasons.append(ten_x_signal.get('trigger_reason') or '10x份额扩张触发')
+        return {
+            'effective': True,
+            'observation_level': 'strong',
+            'observation_label': '增强观察',
+            'direction': 'expansion',
+            'direction_label': '份额扩张',
+            'reasons': reasons,
+            'not_triggered_reasons': [],
+        }
+
+    if direction == 'expansion':
+        if chg5d is not None and chg5d > 3 and chg20d is not None and chg20d > 5:
+            reasons.append(f'5日份额+{chg5d:.1f}%，20日份额+{chg20d:.1f}%')
+            return {
+                'effective': True,
+                'observation_level': 'enhanced',
+                'observation_label': '增强观察',
+                'direction': 'expansion',
+                'direction_label': '份额扩张',
+                'reasons': reasons,
+                'not_triggered_reasons': [],
+            }
+        not_triggered.append('份额扩张未同时达到5日>3%且20日>5%的增强观察阈值')
+    elif direction == 'contraction':
+        if chg5d is not None and chg5d < -3 and chg20d is not None and chg20d < -5:
+            reasons.append(f'5日份额{chg5d:.1f}%，20日份额{chg20d:.1f}%')
+            return {
+                'effective': True,
+                'observation_level': 'weakened',
+                'observation_label': '减弱观察',
+                'direction': 'contraction',
+                'direction_label': '份额收缩',
+                'reasons': reasons,
+                'not_triggered_reasons': [],
+            }
+        not_triggered.append('份额收缩未同时达到5日<-3%且20日<-5%的减弱观察阈值')
+    elif direction == 'flat':
+        not_triggered.append('份额无明显变化')
+    else:
+        not_triggered.append('历史份额样本不足，无法判断份额变动方向')
+
+    if ten_x_signal:
+        not_triggered.extend(ten_x_signal.get('not_triggered_reasons') or [])
+    if warnings:
+        reasons.append('存在质量警告，仅作观察')
+
+    return {
+        'effective': False,
+        'observation_level': 'watch',
+        'observation_label': '观望',
+        'direction': direction,
+        'direction_label': {
+            'expansion': '份额扩张',
+            'contraction': '份额收缩',
+            'flat': '无明显变化',
+            'unknown': '样本不足',
+        }.get(direction, '样本不足'),
+        'reasons': reasons,
+        'not_triggered_reasons': _dedupe_strings(not_triggered),
     }
 
 
 def _compute_observation_level(changes, interval, ten_x_signal, blocked=False):
-    """observation: strong, enhanced, weakened, none, or blocked"""
-    if blocked:
-        return 'blocked'
-    if ten_x_signal and ten_x_signal.get('active'):
-        return 'strong'
-    chg5d = changes.get('share_change_ratio_5d')
-    chg20d = changes.get('share_change_ratio_20d')
-    if chg5d is not None and chg5d > 3 and chg20d is not None and chg20d > 5:
-        return 'enhanced'
-    if chg5d is not None and chg5d < -3 and chg20d is not None and chg20d < -5:
-        return 'weakened'
-    return 'none'
+    return _compute_huijin_signal(
+        changes,
+        interval,
+        ten_x_signal,
+        blockers=[_issue('BLOCKED', 'blocker', 'blocked')] if blocked else [],
+    )['observation_level']
 
 
-def _compute_quality_tags(baseline, share, audit, warnings):
+def _compute_quality_tags(baseline, share, audit, warnings, blockers=None, source_level=None):
     tags = []
+    blockers = blockers or []
+    if blockers:
+        tags.append('data_blocked')
+        for b in blockers:
+            if b.get('issue_type'):
+                tags.append(str(b.get('issue_type')).lower())
     if not baseline or baseline.get('verification_status') != 'verified':
         tags.append('baseline_unverified')
     elif baseline.get('source_doc_url'):
@@ -1653,23 +1949,35 @@ def _compute_quality_tags(baseline, share, audit, warnings):
         tags.append('doc_url_missing')
     if audit:
         src = audit.get('source_name', '')
+        if source_level:
+            tags.append(f'source_level_{str(source_level).lower()}')
         if 'sse' in src or 'szse' in src:
             tags.append('exchange_source')
         elif 'legacy' in src:
             tags.append('legacy_source')
         if audit.get('source_date_inferred'):
             tags.append('source_date_inferred')
+        if share and share.get('stale'):
+            tags.append('stale_share')
+            if 'sse' in src:
+                tags.append('sse_source_lag')
         flags = _flag_set(audit.get('quality_flags'))
         if 'SHARE_GAP' in flags:
             tags.append('share_gap')
         if 'ABNORMAL_JUMP' in flags:
             tags.append('abnormal_jump')
+    elif share and share.get('stale'):
+        tags.append('stale_share')
     for w in (warnings or []):
         if w.get('issue_type') == 'SOURCE_DATE_INFERRED':
             tags.append('source_date_inferred')
-        if w.get('issue_type') in ('SHARE_GAP', 'ABNORMAL_JUMP'):
+        if w.get('issue_type') == 'STALE_SHARE_DATE':
+            tags.append('stale_share')
+        if w.get('issue_type') == 'SSE_SOURCE_STALE':
+            tags.extend(['stale_share', 'sse_source_lag'])
+        if w.get('issue_type') in ('SHARE_GAP', 'ABNORMAL_JUMP', 'MISSING_H0', 'MISSING_VERIFIED_BASELINE'):
             tags.append(w.get('issue_type').lower())
-    return tags
+    return _dedupe_strings(tags)
 
 
 def _compute_signal_reasons(changes, interval, ten_x_signal):
@@ -1689,15 +1997,54 @@ def _compute_signal_reasons(changes, interval, ten_x_signal):
     return reasons
 
 
+def _quality_display_state(source_level, blockers, warnings, share, audit):
+    if blockers:
+        return {
+            'label': '数据阻断',
+            'rule': 'blocked',
+            'note': '存在阻断问题，区间与有效信号均不输出',
+        }
+    if share and share.get('stale') and audit and str(audit.get('source_name') or '').startswith('sse'):
+        return {
+            'label': '沪市源滞后',
+            'rule': 'sse_stale',
+            'note': '沪市份额源滞后于观察日期，按最近有效交易日展示为 warning',
+        }
+    if audit and audit.get('source_date_inferred'):
+        return {
+            'label': '源日期推断',
+            'rule': 'source_date_inferred',
+            'note': '深市份额源日期由交易日历推断，进入 warning 但不阻断公式',
+        }
+    if share and share.get('stale'):
+        return {
+            'label': '数据滞后',
+            'rule': 'stale',
+            'note': '最新份额日早于观察日期，进入 warning',
+        }
+    if warnings:
+        return {
+            'label': '质量警告',
+            'rule': 'warning',
+            'note': '存在 warning，默认回测过滤但页面可观察',
+        }
+    return {
+        'label': '可观察',
+        'rule': 'observable',
+        'note': '基准与份额审计满足观察条件',
+    }
+
+
 def get_huijin_overview(as_of_date=None):
     if as_of_date is None:
-        as_of_date = get_max_date() or datetime.now().strftime('%Y-%m-%d')
+        as_of_date = _default_huijin_as_of_date()
     as_of = _nullable_norm_date(as_of_date)
     group_rows = get_huijin_watch_groups(active_only=True)
     group_by_code = {}
     for row in group_rows:
         group_by_code.setdefault(str(row['code']), []).append(row['group_name'])
 
+    audit_issue_map, global_audit_issues, audit_summary = _audit_issues_by_code()
     items = []
     for code in _huijin_codes():
         info = _fund_info(code)
@@ -1706,17 +2053,39 @@ def get_huijin_overview(as_of_date=None):
         share = _latest_valid_share(code, as_of, exchange)
         audit = share.get('audit') if share else None
         blockers, warnings = _validate_huijin_inputs(code, baseline, share)
-        # Merge audit-level additional issues
-        audit_extra = _audit_item_additional_issues(code, baseline, share, audit)
-        for iss in audit_extra:
+        for iss in _audit_item_additional_issues(code, baseline, share, audit) + audit_issue_map.get(str(code), []):
             if iss.get('severity') == 'blocker':
                 blockers.append(iss)
             else:
                 warnings.append(iss)
+        blockers = _dedupe_issues(blockers)
+        warnings = _dedupe_issues(warnings)
         interval = None
         if not blockers and baseline and share:
             interval = _calculate_huijin_interval(baseline, share)
         changes = _share_changes(code, share['date'], baseline=baseline) if share else {}
+        source_level = _compute_source_level(share, audit)
+        quality_levels = _compute_quality_level(blockers, warnings, baseline, share, audit)
+        if blockers:
+            ten_x_signal = {
+                'active': False,
+                'effective': False,
+                'blocked': True,
+                'consecutive_days': 0,
+                'baseline_volume': None,
+                'threshold': 10,
+                'threshold_consecutive': 7,
+                'current_ratio': None,
+                'max_recent_ratio': None,
+                'trigger_reason': None,
+                'not_triggered_reasons': ['数据阻断，10x信号不输出'],
+                'direction': 'unknown',
+            }
+        else:
+            ten_x_signal = _detect_ten_x_signal(code, as_of)
+        signal = _compute_huijin_signal(changes, interval, ten_x_signal, blockers, warnings)
+        quality_tags = _compute_quality_tags(baseline, share, audit, warnings, blockers=blockers, source_level=source_level)
+        quality_state = _quality_display_state(source_level, blockers, warnings, share, audit)
         items.append({
             'code': code,
             'name': info.get('name'),
@@ -1751,15 +2120,22 @@ def get_huijin_overview(as_of_date=None):
             'vs_baseline_ratio': changes.get('vs_baseline_ratio'),
             'vs_baseline_pct': changes.get('vs_baseline_pct'),
             'interval': interval,
-            'interval_note': '相对披露日总份额归一化口径，不代表实时汇金真实持仓' if interval else None,
-            'ten_x_signal': _detect_ten_x_signal(code, as_of),
-            # Computed metadata
-            'source_level': _compute_source_level(share, audit),
-            'quality_levels': _compute_quality_level(blockers, warnings, baseline, share, audit),
-            'quality_level': _compute_quality_level(blockers, warnings, baseline, share, audit)['overall_quality'],
-            'observation_level': _compute_observation_level(changes, interval, _detect_ten_x_signal(code, as_of), blocked=bool(blockers)),
-            'quality_tags': _compute_quality_tags(baseline, share, audit, warnings),
-            'signal_reasons': _compute_signal_reasons(changes, interval, _detect_ten_x_signal(code, as_of)),
+            'interval_note': '相对披露日总份额归一化口径，不代表实时账户持有比例' if interval else None,
+            'ten_x_signal': ten_x_signal,
+            'source_level': source_level,
+            'quality_levels': quality_levels,
+            'quality_level': quality_levels['overall_quality'],
+            'quality_filter_level': quality_levels['quality_filter_level'],
+            'quality_state': quality_state,
+            'display_rule': quality_state.get('rule'),
+            'observation_level': signal['observation_level'],
+            'observation_label': signal['observation_label'],
+            'share_change_direction': signal['direction'],
+            'share_change_direction_label': signal['direction_label'],
+            'quality_tags': quality_tags,
+            'signal': signal,
+            'signal_reasons': signal['reasons'],
+            'not_triggered_reasons': signal['not_triggered_reasons'],
         })
 
     groups = []
@@ -1773,12 +2149,41 @@ def get_huijin_overview(as_of_date=None):
             (i['interval']['s0_total_shares'] if i.get('interval') else 0) or 0
             for i in group_items
         ) if group_items else None
+        total_change_5d = sum((i.get('share_change_5d') or 0) for i in group_items)
+        total_change_20d = sum((i.get('share_change_20d') or 0) for i in group_items)
+        components = []
+        for i in group_items:
+            latest = i.get('latest_share') or {}
+            latest_shares = latest.get('total_shares') or 0
+            components.append({
+                'code': i.get('code'),
+                'name': i.get('name'),
+                'status': i.get('status'),
+                'quality_level': i.get('quality_level'),
+                'quality_filter_level': i.get('quality_filter_level'),
+                'quality_state': i.get('quality_state'),
+                'warning_count': len(i.get('warnings') or []),
+                'blocker_count': len(i.get('blockers') or []),
+                'warning_types': [w.get('issue_type') for w in (i.get('warnings') or [])],
+                'blocker_types': [b.get('issue_type') for b in (i.get('blockers') or [])],
+                'latest_total_shares': latest_shares,
+                'share_weight_pct': round(latest_shares / total_shares * 100, 2) if total_shares else None,
+                'share_change_5d': i.get('share_change_5d'),
+                'share_change_20d': i.get('share_change_20d'),
+                'share_change_ratio_5d': i.get('share_change_ratio_5d'),
+                'share_change_ratio_20d': i.get('share_change_ratio_20d'),
+                'change_contribution_5d_pct': round((i.get('share_change_5d') or 0) / total_change_5d * 100, 2) if total_change_5d else None,
+                'change_contribution_20d_pct': round((i.get('share_change_20d') or 0) / total_change_20d * 100, 2) if total_change_20d else None,
+            })
         groups.append({
             'group_name': group_name,
-            'scope_note': 'ETF 池份额观察，不代表单一汇金账户仓位',
+            'scope_note': 'ETF 池份额观察，不代表单一账户持有比例',
             'codes': [i['code'] for i in group_items],
             'ok_count': sum(1 for i in group_items if i['status'] == 'ok'),
             'blocked_count': sum(1 for i in group_items if i['status'] != 'ok'),
+            'warning_count': sum(1 for i in group_items if i.get('warnings')),
+            'blocked_codes': [i['code'] for i in group_items if i.get('blockers')],
+            'warning_codes': [i['code'] for i in group_items if i.get('warnings')],
             'latest_total_shares': total_shares,
             'total_s0_shares': total_s0,
             'share_change_ratio_1d': _pool_change_ratio(group_items, 'share_change_1d', total_shares),
@@ -1786,19 +2191,51 @@ def get_huijin_overview(as_of_date=None):
             'share_change_ratio_10d': _pool_change_ratio(group_items, 'share_change_10d', total_shares),
             'share_change_ratio_20d': _pool_change_ratio(group_items, 'share_change_20d', total_shares),
             'share_change_ratio_60d': _pool_change_ratio(group_items, 'share_change_60d', total_shares),
+            'components': components,
         })
 
     ok_count = sum(1 for i in items if i['status'] == 'ok')
     blocked_count = len(items) - ok_count
     warning_count = sum(1 for i in items if i.get('warnings'))
+    formula_calculable_count = sum(1 for i in items if i.get('can_calculate_interval'))
     formula_preview_count = sum(1 for i in items if i.get('quality_levels', {}).get('overall_quality') == 'preview')
     verified_observable_count = sum(1 for i in items if i.get('quality_levels', {}).get('overall_quality') == 'observable')
+    warning_quality_count = sum(1 for i in items if i.get('quality_levels', {}).get('overall_quality') == 'warning')
     data_blocked_count = sum(1 for i in items if i.get('quality_levels', {}).get('overall_quality') == 'data_blocked')
+    quality_issue_counts = {}
+    for i in items:
+        for issue in (i.get('blockers') or []) + (i.get('warnings') or []):
+            key = issue.get('issue_type') or 'UNKNOWN'
+            quality_issue_counts[key] = quality_issue_counts.get(key, 0) + 1
+    source_level_counts = {}
+    display_rule_counts = {}
+    quality_filter_counts = {}
+    quality_level_counts = {}
+    for i in items:
+        source_level_counts[i.get('source_level') or 'D'] = source_level_counts.get(i.get('source_level') or 'D', 0) + 1
+        display_rule_counts[i.get('display_rule') or 'unknown'] = display_rule_counts.get(i.get('display_rule') or 'unknown', 0) + 1
+        quality_filter_counts[i.get('quality_filter_level') or 'blocked'] = quality_filter_counts.get(i.get('quality_filter_level') or 'blocked', 0) + 1
+        quality_level_counts[i.get('quality_level') or 'blocked'] = quality_level_counts.get(i.get('quality_level') or 'blocked', 0) + 1
     share_dates = [i['latest_share']['date'] for i in items if i['latest_share'] and i['latest_share'].get('date')]
     latest_share_date = max(share_dates) if share_dates else None
 
-    ten_x_active_count = sum(1 for i in items if i.get('ten_x_signal') and i['ten_x_signal'].get('active'))
-    ten_x_active_codes = [i['code'] for i in items if i.get('ten_x_signal') and i['ten_x_signal'].get('active')]
+    ten_x_active_count = sum(1 for i in items if i.get('signal', {}).get('effective') and i.get('ten_x_signal') and i['ten_x_signal'].get('active'))
+    ten_x_active_codes = [i['code'] for i in items if i.get('signal', {}).get('effective') and i.get('ten_x_signal') and i['ten_x_signal'].get('active')]
+    quality_summary = {
+        'total': len(items),
+        'formula_calculable_count': formula_calculable_count,
+        'observable_count': verified_observable_count,
+        'warning_count': warning_quality_count,
+        'preview_count': formula_preview_count,
+        'data_blocked_count': data_blocked_count,
+        'status_blocked_count': blocked_count,
+        'source_level_counts': source_level_counts,
+        'display_rule_counts': display_rule_counts,
+        'quality_filter_counts': quality_filter_counts,
+        'quality_level_counts': quality_level_counts,
+        'issue_counts': quality_issue_counts,
+        'global_issue_count': len(global_audit_issues),
+    }
 
     return {
         'generated_at': datetime.now().isoformat(timespec='seconds'),
@@ -1808,20 +2245,33 @@ def get_huijin_overview(as_of_date=None):
         'ok_count': ok_count,
         'blocked_count': blocked_count,
         'warning_count': warning_count,
+        'formula_calculable_count': formula_calculable_count,
         'formula_preview_count': formula_preview_count,
         'verified_observable_count': verified_observable_count,
+        'warning_quality_count': warning_quality_count,
         'data_blocked_count': data_blocked_count,
+        'quality_summary': quality_summary,
+        'quality_issue_counts': quality_issue_counts,
+        'audit_summary': audit_summary,
+        'global_quality_issues': global_audit_issues,
         'ten_x_active_count': ten_x_active_count,
         'ten_x_active_codes': ten_x_active_codes,
         'items': items,
         'groups': groups,
+        'cffex_meta': get_cffex_position_meta(as_of_date=as_of),
+        'display_rules': {
+            'stale': '最新份额日早于观察日期时，页面展示为数据滞后 warning，仍可观察但默认不进入回测。',
+            'source_date_inferred': '深市份额源日期由交易日历推断，展示为源日期推断 warning，不阻断公式。',
+            'sse_stale': '沪市直采份额若滞后于观察日期，展示为沪市源滞后 warning。',
+            'blocked': 'blocked 样本不展示区间结果，不输出有效信号，不进入默认回测。',
+        },
         'disclaimer': 'ETF 份额变化只作为公开数据观察，不等同于中央汇金交易确认。',
     }
 
 
 def get_huijin_series(code, as_of_date=None, limit=250):
     if as_of_date is None:
-        as_of_date = get_max_date() or datetime.now().strftime('%Y-%m-%d')
+        as_of_date = _default_huijin_as_of_date()
     as_of = _nullable_norm_date(as_of_date)
     exchange = _code_exchange(code)
 
@@ -1884,8 +2334,8 @@ def get_huijin_series(code, as_of_date=None, limit=250):
     if not has_calendar:
         rows = [r for r in rows if is_trading_day(r['date'], exchange)]
 
-    # Get quality issues once
-    quality_issues = {q['date']: q for q in get_data_quality_issues(code=code, status='open')}
+    # Get quality issues once. Keep all same-day issues plus global issues.
+    quality_issues = _quality_issues_by_date(get_data_quality_issues(code=code, status='open', limit=1000))
 
     # Pre-fetch baseline once (all points share the same active baseline)
     baseline = get_active_huijin_baseline(code, as_of_date=as_of)
@@ -1916,14 +2366,26 @@ def get_huijin_series(code, as_of_date=None, limit=250):
         blockers, warnings = _validate_huijin_inputs(str(code), baseline, share, skip_quality=True, skip_trading_day=True, skip_events=True)
 
         # Add quality issue warnings without extra query
-        qi = quality_issues.get(row['date'])
-        if qi:
+        row_issues = quality_issues.get(None, []) + quality_issues.get(_nullable_norm_date(row['date']), [])
+        for qi in row_issues:
             target = blockers if qi.get('severity') == 'blocker' else warnings
-            target.append(_issue(qi.get('issue_type'), qi.get('severity'), qi.get('message'), code=code, date=row['date']))
+            target.append(_issue(
+                qi.get('issue_type'),
+                qi.get('severity'),
+                qi.get('message'),
+                code=qi.get('code') or code,
+                date=qi.get('date') or row['date'],
+            ))
+        blockers = _dedupe_issues(blockers)
+        warnings = _dedupe_issues(warnings)
 
         interval = None
         if not blockers and baseline:
             interval = _calculate_huijin_interval(baseline, share)
+        source_level = _compute_source_level(share, audit)
+        quality_levels = _compute_quality_level(blockers, warnings, baseline, share, audit)
+        quality_tags = _compute_quality_tags(baseline, share, audit, warnings, blockers=blockers, source_level=source_level)
+        quality_state = _quality_display_state(source_level, blockers, warnings, share, audit)
 
         # Compute share changes from in-memory data
         changes = {}
@@ -1954,6 +2416,16 @@ def get_huijin_series(code, as_of_date=None, limit=250):
             'status': 'ok' if interval else 'blocked',
             'blockers': blockers,
             'warnings': warnings,
+            'quality_issue_types': [
+                i.get('issue_type') for i in (blockers + warnings) if i.get('issue_type')
+            ],
+            'source_level': source_level,
+            'quality_levels': quality_levels,
+            'quality_level': quality_levels.get('overall_quality'),
+            'quality_filter_level': quality_levels.get('quality_filter_level'),
+            'quality_tags': quality_tags,
+            'quality_state': quality_state,
+            'display_rule': quality_state.get('rule'),
             'baseline_id': baseline.get('baseline_id') if baseline else None,
             'b_ratio': interval.get('b_ratio') if interval else None,
             'y_min': interval.get('y_min') if interval else None,
@@ -1974,6 +2446,443 @@ def get_huijin_series(code, as_of_date=None, limit=250):
         'events': get_fund_share_events(code=code),
         'series': series,
         'disclaimer': '历史序列使用当日已披露 verified 基准，避免未来函数。',
+    }
+
+
+def _price_path_after_signal(code, signal_date, windows):
+    max_window = max(windows or [60])
+    return _to_records(query("""
+        SELECT date, close
+        FROM daily_kline
+        WHERE code = ? AND close IS NOT NULL AND date > ?
+        ORDER BY date ASC
+        LIMIT ?
+    """, [str(code), _nullable_norm_date(signal_date), max_window]))
+
+
+def _max_drawdown_pct(closes):
+    if not closes:
+        return None
+    peak = closes[0]
+    max_drawdown = 0
+    for close in closes:
+        if close is None:
+            continue
+        peak = max(peak, close)
+        if peak:
+            max_drawdown = min(max_drawdown, (close - peak) / peak * 100)
+    return round(max_drawdown, 4)
+
+
+def _event_returns_from_path(path, windows):
+    if not path:
+        return {}, {}, None
+    entry = path[0]
+    entry_close = entry.get('close')
+    if not entry_close:
+        return {}, {}, None
+    returns = {}
+    drawdowns = {}
+    for window in windows:
+        if len(path) >= window:
+            exit_row = path[window - 1]
+            exit_close = exit_row.get('close')
+            if exit_close:
+                returns[str(window)] = {
+                    'entry_date': entry.get('date'),
+                    'exit_date': exit_row.get('date'),
+                    'return_pct': round((exit_close - entry_close) / entry_close * 100, 4),
+                }
+                drawdowns[str(window)] = _max_drawdown_pct([r.get('close') for r in path[:window]])
+            else:
+                returns[str(window)] = None
+                drawdowns[str(window)] = None
+        else:
+            returns[str(window)] = None
+            drawdowns[str(window)] = None
+    return returns, drawdowns, entry.get('date')
+
+
+def _baseline_for_event_date(baselines, date):
+    date_s = _nullable_norm_date(date)
+    candidates = [
+        b for b in baselines or []
+        if b.get('disclosure_date') and b.get('disclosure_date') <= date_s
+    ]
+    candidates.sort(
+        key=lambda b: (b.get('disclosure_date') or '', b.get('report_date') or ''),
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
+
+
+def _share_changes_from_rows(rows, idx, baseline=None):
+    result = {}
+    cur = rows[idx].get('total_shares')
+    if cur is None:
+        return result
+    cur = float(cur)
+    for label, offset in [('1d', 1), ('5d', 5), ('10d', 10), ('20d', 20), ('60d', 60)]:
+        if idx < offset:
+            continue
+        prev = rows[idx - offset].get('total_shares')
+        if prev and float(prev) > 0:
+            prev = float(prev)
+            delta = cur - prev
+            result[f'share_change_{label}'] = round(delta / 1e4, 2)
+            result[f'share_change_ratio_{label}'] = round(delta / prev * 100, 4)
+    if baseline and baseline.get('s0_total_shares'):
+        s0 = float(baseline['s0_total_shares'])
+        if s0 > 0:
+            ratio = cur / s0
+            result['vs_baseline_ratio'] = round(ratio, 4)
+            result['vs_baseline_pct'] = round((ratio - 1) * 100, 2)
+    return result
+
+
+def _detect_ten_x_signal_from_rows(rows, idx, baseline_window=20, threshold=10, consecutive=7):
+    empty = {
+        'active': False,
+        'effective': False,
+        'consecutive_days': 0,
+        'baseline_volume': None,
+        'threshold': threshold,
+        'threshold_consecutive': consecutive,
+        'current_ratio': None,
+        'max_recent_ratio': None,
+        'trigger_reason': None,
+        'not_triggered_reasons': [],
+        'direction': 'unknown',
+    }
+    if idx < baseline_window + consecutive:
+        result = dict(empty)
+        result['not_triggered_reasons'] = ['历史份额样本不足，无法建立10x基准量']
+        return result
+    changes = []
+    start = idx - baseline_window - consecutive + 1
+    for j in range(start, idx + 1):
+        if j <= 0:
+            continue
+        prev = rows[j - 1].get('total_shares')
+        cur = rows[j].get('total_shares')
+        if prev is None or cur is None:
+            continue
+        changes.append((rows[j].get('date'), float(cur) - float(prev)))
+    if len(changes) < baseline_window + consecutive:
+        result = dict(empty)
+        result['not_triggered_reasons'] = ['有效份额变化样本不足，无法判断10x']
+        return result
+    baseline_values = sorted(abs(c) for _, c in changes[:baseline_window] if c != 0)
+    if not baseline_values:
+        result = dict(empty)
+        result['not_triggered_reasons'] = ['基准期份额变化为0，无法计算10x倍率']
+        result['direction'] = 'flat'
+        return result
+    baseline = baseline_values[len(baseline_values) // 2]
+    if baseline <= 0:
+        result = dict(empty)
+        result['not_triggered_reasons'] = ['基准量无效，无法计算10x倍率']
+        return result
+    recent = changes[-consecutive:]
+    positive_days = [(d, c / baseline) for d, c in recent if c > baseline * threshold]
+    negative_days = [(d, abs(c) / baseline) for d, c in recent if c < -baseline * threshold]
+    recent_sum = sum(c for _, c in recent)
+    direction = 'expansion' if recent_sum > baseline else ('contraction' if recent_sum < -baseline else 'flat')
+    active = len(positive_days) >= consecutive
+    not_triggered = []
+    if not active:
+        if negative_days:
+            not_triggered.append('最近存在大额份额收缩，10x增强观察不触发')
+        not_triggered.append(f'仅{len(positive_days)}/{consecutive}个交易日超过{threshold}倍基准量')
+    return {
+        'active': active,
+        'effective': active,
+        'consecutive_days': len(positive_days),
+        'baseline_volume': round(baseline, 2),
+        'threshold': threshold,
+        'threshold_consecutive': consecutive,
+        'current_ratio': round(positive_days[-1][1], 1) if positive_days else None,
+        'max_recent_ratio': round(max([abs(c) / baseline for _, c in recent] or [0]), 1),
+        'trigger_reason': f"连续{len(positive_days)}个交易日超过{threshold}倍基准量" if active else None,
+        'not_triggered_reasons': not_triggered,
+        'direction': direction,
+    }
+
+
+def get_huijin_event_study(as_of_date=None, windows=None, include_warnings=False,
+                           min_events=5, debounce_days=5, limit=500):
+    """Minimal event study for Huijin share-observation signals.
+
+    Uses only baselines disclosed on or before each signal date. A signal on T is
+    evaluated from the next available daily_kline close.
+    """
+    if windows is None:
+        windows = [5, 10, 20, 60]
+    windows = sorted({int(w) for w in windows if int(w) > 0})
+    if not windows:
+        windows = [5, 10, 20, 60]
+    if as_of_date is None:
+        as_of_date = _default_huijin_as_of_date()
+    as_of = _nullable_norm_date(as_of_date)
+
+    events = []
+    skipped = {
+        'blocked': 0,
+        'warning_filtered': 0,
+        'no_signal': 0,
+        'missing_price_path': 0,
+        'debounced': 0,
+    }
+    skipped_issue_counts = {}
+    candidate_points = 0
+    for code in _huijin_codes():
+        info = _fund_info(code)
+        exchange = _code_exchange(code)
+        rows = _to_records(query("""
+            SELECT *
+            FROM (
+                SELECT s.date, s.total_shares,
+                       a.source_name, a.source_url, a.source_date, a.source_date_inferred,
+                       a.raw_unit, a.normalized_total_shares, a.quality_flags
+                FROM daily_snapshot s
+                LEFT JOIN LATERAL (
+                    SELECT source_name, source_url, source_date, source_date_inferred,
+                           raw_unit, normalized_total_shares, quality_flags
+                    FROM daily_snapshot_audit a2
+                    WHERE a2.date = s.date AND a2.code = s.code
+                    ORDER BY CASE a2.source_name
+                        WHEN 'sse_etf_scale' THEN 0
+                        WHEN 'szse_etf_scale' THEN 0
+                        WHEN 'backfill_sse_etf_scale' THEN 1
+                        WHEN 'backfill_szse_etf_scale' THEN 1
+                        ELSE 9
+                    END
+                    LIMIT 1
+                ) a ON TRUE
+                WHERE s.code = ? AND s.total_shares IS NOT NULL AND s.date <= ?
+                  AND strftime(s.date, '%w') NOT IN ('0', '6')
+                ORDER BY s.date DESC
+                LIMIT ?
+            ) t
+            ORDER BY date ASC
+        """, [str(code), as_of, int(limit)]))
+        if _table_exists('market_calendar'):
+            calendar_rows = _to_records(query("""
+                SELECT date
+                FROM market_calendar
+                WHERE exchange = ? AND is_trading_day = TRUE AND date <= ?
+            """, [exchange, as_of]))
+            trading_dates = {r.get('date') for r in calendar_rows}
+            if trading_dates:
+                rows = [r for r in rows if r.get('date') in trading_dates]
+        baselines = get_huijin_baselines(code=str(code), verified_only=True)
+        quality_issues = _quality_issues_by_date(get_data_quality_issues(code=code, status='open', limit=1000))
+        unresolved_events = get_fund_share_events(code=code, unresolved_only=True)
+        last_event_index = {}
+        for idx, row in enumerate(rows):
+            candidate_points += 1
+            baseline = _baseline_for_event_date(baselines, row.get('date'))
+            audit = {
+                'source_name': row.get('source_name'),
+                'source_url': row.get('source_url'),
+                'source_date': row.get('source_date'),
+                'source_date_inferred': row.get('source_date_inferred'),
+                'raw_unit': row.get('raw_unit'),
+                'normalized_total_shares': row.get('normalized_total_shares'),
+                'quality_flags': row.get('quality_flags'),
+            } if row.get('source_name') else None
+            share = {'date': row.get('date'), 'total_shares': row.get('total_shares'), 'audit': audit, 'stale': False}
+            blockers, warnings = _validate_huijin_inputs(
+                str(code), baseline, share,
+                skip_quality=True,
+                skip_trading_day=True,
+                skip_events=True,
+            )
+            row_issues = [
+                qi for qi in quality_issues.get(None, [])
+                if qi.get('severity') == 'blocker'
+            ] + quality_issues.get(_nullable_norm_date(row.get('date')), [])
+            for qi in row_issues:
+                target = blockers if qi.get('severity') == 'blocker' else warnings
+                target.append(_issue(qi.get('issue_type'), qi.get('severity'), qi.get('message'), code=code, date=qi.get('date')))
+            if baseline and baseline.get('report_date'):
+                for event in unresolved_events:
+                    event_date = event.get('event_date')
+                    if event_date and baseline.get('report_date') <= event_date <= row.get('date'):
+                        blockers.append(_issue(
+                            'UNRESOLVED_SHARE_EVENT',
+                            'blocker',
+                            '基准日至计算日之间存在未处理份额事件',
+                            code=code,
+                            date=event_date,
+                        ))
+                        break
+            blockers = _dedupe_issues(blockers)
+            warnings = _dedupe_issues(warnings)
+            if blockers:
+                skipped['blocked'] += 1
+                for issue in blockers:
+                    key = issue.get('issue_type') or 'UNKNOWN'
+                    skipped_issue_counts[key] = skipped_issue_counts.get(key, 0) + 1
+                continue
+            if warnings and not include_warnings:
+                skipped['warning_filtered'] += 1
+                for issue in warnings:
+                    key = issue.get('issue_type') or 'UNKNOWN'
+                    skipped_issue_counts[key] = skipped_issue_counts.get(key, 0) + 1
+                continue
+            interval = _calculate_huijin_interval(baseline, share) if baseline else None
+            changes = _share_changes_from_rows(rows, idx, baseline=baseline)
+            ten_x_signal = _detect_ten_x_signal_from_rows(rows, idx)
+            signal = _compute_huijin_signal(changes, interval, ten_x_signal, blockers, warnings)
+            if not signal.get('effective') or signal.get('observation_level') not in ('strong', 'enhanced', 'weakened'):
+                skipped['no_signal'] += 1
+                continue
+            debounce_key = (code, signal.get('observation_level'))
+            if debounce_key in last_event_index and idx - last_event_index[debounce_key] < debounce_days:
+                skipped['debounced'] += 1
+                continue
+            last_event_index[debounce_key] = idx
+
+            price_path = _price_path_after_signal(code, row.get('date'), windows)
+            returns, drawdowns, entry_date = _event_returns_from_path(price_path, windows)
+            if not entry_date:
+                skipped['missing_price_path'] += 1
+            events.append({
+                'code': str(code),
+                'name': info.get('name'),
+                'signal_date': row.get('date'),
+                'entry_date': entry_date,
+                'observation_level': signal.get('observation_level'),
+                'observation_label': signal.get('observation_label'),
+                'direction': signal.get('direction'),
+                'direction_label': signal.get('direction_label'),
+                'quality_filter_level': _quality_filter_level(blockers, warnings),
+                'source_level': _compute_source_level(share, audit),
+                'signal_reasons': signal.get('reasons') or [],
+                'returns': returns,
+                'max_drawdown_pct': drawdowns,
+                'disclosure_date': baseline.get('disclosure_date') if baseline else None,
+            })
+
+    metrics = {}
+    ready_windows = []
+    insufficient_windows = []
+    for window in windows:
+        key = str(window)
+        usable = []
+        hits = 0
+        drawdown_values = []
+        for event in events:
+            ret_obj = (event.get('returns') or {}).get(key)
+            if not ret_obj:
+                continue
+            ret = ret_obj.get('return_pct')
+            if ret is None:
+                continue
+            usable.append(ret)
+            if event.get('direction') == 'contraction':
+                hits += 1 if ret < 0 else 0
+            else:
+                hits += 1 if ret > 0 else 0
+            dd = (event.get('max_drawdown_pct') or {}).get(key)
+            if dd is not None:
+                drawdown_values.append(dd)
+        count = len(usable)
+        window_ready = count >= min_events
+        if window_ready:
+            ready_windows.append(window)
+        else:
+            insufficient_windows.append(window)
+        metrics[key] = {
+            'window': window,
+            'signal_count': count,
+            'directional_hit_rate': round(hits / count * 100, 2) if count else None,
+            'average_return_pct': round(sum(usable) / count, 4) if count else None,
+            'max_drawdown_pct': min(drawdown_values) if drawdown_values else None,
+            'sample_status': 'ok' if window_ready else 'sample_insufficient',
+        }
+    ready = bool(windows) and not insufficient_windows
+    partial_ready = bool(ready_windows)
+
+    skip_labels = {
+        'blocked': 'blocked 样本被质量门禁过滤',
+        'warning_filtered': 'warning 样本默认不进入回测',
+        'no_signal': '未触发增强/减弱观察',
+        'missing_price_path': '缺少 T+1 后行情路径',
+        'debounced': '同一代码同类信号在冷却期内合并',
+    }
+    skipped_reasons = [
+        {'reason': key, 'label': skip_labels.get(key, key), 'count': count}
+        for key, count in sorted(skipped.items(), key=lambda kv: kv[1], reverse=True)
+        if count
+    ]
+    skipped_issue_reasons = [
+        {'issue_type': key, 'count': count}
+        for key, count in sorted(skipped_issue_counts.items(), key=lambda kv: kv[1], reverse=True)
+    ]
+    sample_explanation = []
+    if insufficient_windows:
+        sample_explanation.append(
+            '样本不足窗口: ' + '/'.join(f'{w}日' for w in insufficient_windows)
+        )
+    if not ready:
+        if not partial_ready:
+            sample_explanation.append(f"有效事件 {len(events)} 次，低于最小样本 {min_events} 次")
+        if skipped.get('blocked'):
+            sample_explanation.append('部分历史点被 blocked 质量问题过滤')
+        if skipped.get('warning_filtered') and not include_warnings:
+            sample_explanation.append('warning 样本默认过滤，可用 include_warnings=true 单独观察')
+        if skipped.get('no_signal'):
+            sample_explanation.append('多数历史点未触发增强观察或减弱观察')
+
+    if ready:
+        message = '样本满足全部窗口最小事件研究条件'
+    elif partial_ready:
+        message = '部分窗口可复盘，样本不足/仅可观察'
+    else:
+        message = '样本不足/仅可观察'
+
+    return {
+        'generated_at': datetime.now().isoformat(timespec='seconds'),
+        'as_of_date': as_of,
+        'windows': windows,
+        'include_warnings': bool(include_warnings),
+        'min_events': min_events,
+        'status': 'ok' if ready else 'sample_insufficient',
+        'is_backtest_ready': ready,
+        'partial_backtest_ready': partial_ready,
+        'ready_windows': ready_windows,
+        'insufficient_windows': insufficient_windows,
+        'message': message,
+        'method': {
+            'no_future_function': True,
+            'baseline_rule': '仅使用 disclosure_date <= 信号日的 verified 基准',
+            'signal_rule': 'T日基于当日及历史份额/audit生成观察信号',
+            'return_rule': '收益从T+1或后续首个K线收盘价开始评估',
+            'quality_filter': '默认过滤 blocked/warning；include_warnings=true 可纳入 warning',
+            'advice_boundary': '复盘结果不生成直接买卖建议',
+        },
+        'metrics': metrics,
+        'events': events[:100],
+        'event_count': len(events),
+        'candidate_point_count': candidate_points,
+        'skipped': skipped,
+        'skipped_reasons': skipped_reasons,
+        'skipped_issue_counts': skipped_issue_counts,
+        'skipped_issue_reasons': skipped_issue_reasons,
+        'sample_gate': {
+            'ready': ready,
+            'partial_ready': partial_ready,
+            'ready_windows': ready_windows,
+            'insufficient_windows': insufficient_windows,
+            'event_count': len(events),
+            'min_events': min_events,
+            'candidate_point_count': candidate_points,
+            'sample_status': 'ok' if ready else 'sample_insufficient',
+            'explanation': sample_explanation,
+        },
+        'disclaimer': '回测/复盘仅用于观察公开ETF份额信号的历史表现，不构成个性化投资建议。',
     }
 
 
@@ -2107,21 +3016,62 @@ def audit_huijin_data(include_persistent=True):
         latest_by_code = {str(r['code']): r for r in latest_rows}
 
         gap_rows = _to_records(query(f"""
-            WITH d AS (
+            WITH active_baseline AS (
+                SELECT code, disclosure_date
+                FROM huijin_baseline
+                WHERE verification_status = 'verified' AND is_active = TRUE
+            ),
+            d AS (
+                SELECT s.code,
+                       s.date,
+                       s.total_shares,
+                       LAG(s.date) OVER (PARTITION BY s.code ORDER BY s.date) AS prev_date,
+                       LAG(s.total_shares) OVER (PARTITION BY s.code ORDER BY s.date) AS prev_shares
+                FROM daily_snapshot s
+                LEFT JOIN active_baseline b ON b.code = s.code
+                WHERE s.code IN ({codes_sql})
+                  AND s.total_shares IS NOT NULL
+                  AND (b.disclosure_date IS NULL OR s.date >= b.disclosure_date)
+            ),
+            x AS (
                 SELECT code,
                        date,
-                       total_shares,
-                       LAG(date) OVER (PARTITION BY code ORDER BY date) AS prev_date,
-                       LAG(total_shares) OVER (PARTITION BY code ORDER BY date) AS prev_shares
-                FROM daily_snapshot
-                WHERE code IN ({codes_sql})
-                  AND total_shares IS NOT NULL
+                       prev_date,
+                       CASE
+                           WHEN EXISTS (
+                               SELECT 1
+                               FROM market_calendar mc0
+                               WHERE mc0.exchange = CASE WHEN starts_with(d.code, '5') THEN 'SSE' ELSE 'SZSE' END
+                               LIMIT 1
+                           )
+                           THEN (
+                               SELECT COUNT(*)
+                               FROM market_calendar mc
+                               WHERE mc.exchange = CASE WHEN starts_with(d.code, '5') THEN 'SSE' ELSE 'SZSE' END
+                                 AND mc.is_trading_day = TRUE
+                                 AND mc.date > d.prev_date
+                                 AND mc.date < d.date
+                           )
+                           ELSE date_diff('day', prev_date, date)
+                       END AS missing_trading_days,
+                       CASE
+                           WHEN EXISTS (
+                               SELECT 1
+                               FROM fund_share_event e
+                               WHERE e.code = d.code
+                                 AND e.event_date = d.date
+                                 AND e.is_resolved = TRUE
+                           )
+                           THEN NULL
+                           ELSE ABS(total_shares - prev_shares) / NULLIF(prev_shares, 0)
+                       END AS change_ratio
+                FROM d
+                WHERE prev_date IS NOT NULL
             )
             SELECT code,
-                   MAX(date_diff('day', prev_date, date)) AS max_gap_days,
-                   MAX(ABS(total_shares - prev_shares) / NULLIF(prev_shares, 0)) AS max_change_ratio
-            FROM d
-            WHERE prev_date IS NOT NULL
+                   MAX(missing_trading_days) AS max_gap_days,
+                   MAX(change_ratio) AS max_change_ratio
+            FROM x
             GROUP BY code
         """))
         gap_by_code = {str(r['code']): r for r in gap_rows}
@@ -2194,7 +3144,7 @@ def audit_huijin_data(include_persistent=True):
                 issues.append(_issue(
                     'SHARE_GAP',
                     'warning',
-                    f'份额序列存在最长 {max_gap} 天间隔，需要补齐或标记断档',
+                    f'披露日后份额序列存在最长 {max_gap} 个交易日缺口，需要补齐或标记断档',
                     code=code,
                 ))
 

@@ -1,6 +1,7 @@
 """Test: read replica auto-creation and error sanitization"""
 import os, shutil, sys, tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from tests._isolation import reset_runtime_modules
 
 # Use a temp directory to avoid touching the user's real databases
 test_dir = tempfile.mkdtemp(prefix='etffun_test_')
@@ -13,6 +14,7 @@ read_db = os.path.join(test_dir, 'etf_read.duckdb')
 # Point to temp dir by setting env var BEFORE importing app
 os.environ['ETF_DB_PATH'] = main_db
 os.environ['ETF_READ_DB_PATH'] = os.environ['ETF_DB_PATH']
+reset_runtime_modules()
 
 # Step 1: Create main DB with real data (simulate production)
 print('=== Step 1: Create main DB with data ===')
@@ -33,6 +35,7 @@ print('\n=== Step 2: Simulate web startup with ETF_DB_PATH ===')
 # Set env var BEFORE importing app (just like wsgi.py does)
 os.environ['ETF_DB_PATH'] = read_db
 os.environ['ETF_READ_DB_PATH'] = os.environ['ETF_DB_PATH']
+reset_runtime_modules()
 
 from server.app import create_app
 app = create_app()
