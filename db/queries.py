@@ -1524,7 +1524,7 @@ def _validate_huijin_inputs(code, baseline, share, skip_quality=False, skip_trad
             ))
         for flag in ['SHARE_GAP', 'ABNORMAL_JUMP']:
             if flag in flags:
-                warnings.append(_issue(flag, 'warning', f'份额 audit 标记 {flag}', code=code, date=share.get('date')))
+                warnings.append(_issue(flag, 'info', f'份额 audit 标记 {flag}', code=code, date=share.get('date')))
 
     events = []
     if not skip_events and baseline.get('report_date') and share.get('date'):
@@ -1716,7 +1716,7 @@ def _audit_item_additional_issues(code, baseline, share, audit):
         flags = _flag_set(audit.get('quality_flags'))
         for flag, label in [('SHARE_GAP', '份额数据断档'), ('ABNORMAL_JUMP', '份额异常跳变')]:
             if flag in flags:
-                issues.append(_issue(flag, 'warning' if flag == 'SHARE_GAP' else 'warning',
+                issues.append(_issue(flag, 'info',
                                     f'{label}', code=code, date=share.get('date')))
     
     return issues
@@ -3149,7 +3149,7 @@ def audit_huijin_data(include_persistent=True):
             if max_gap is not None and max_gap > 10:
                 issues.append(_issue(
                     'SHARE_GAP',
-                    'warning',
+                    'info',
                     f'披露日后份额序列存在最长 {max_gap} 个交易日缺口，需要补齐或标记断档',
                     code=code,
                 ))
@@ -3158,7 +3158,7 @@ def audit_huijin_data(include_persistent=True):
             if max_change is not None and max_change > 0.3:
                 issues.append(_issue(
                     'ABNORMAL_JUMP',
-                    'warning',
+                    'info',
                     f'份额序列存在超过 {max_change:.2%} 的相邻跳变，需要核对源数据或份额事件',
                     code=code,
                 ))
