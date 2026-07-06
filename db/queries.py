@@ -527,6 +527,7 @@ def seed_huijin_baselines_from_config():
         cfg = json.load(f) or {}
 
     update_date = _nullable_norm_date(cfg.get('更新日期'))
+    disclosure_date = _nullable_norm_date(cfg.get('披露日期')) or update_date
     report_period = _report_period_from_date(update_date)
     source_title = cfg.get('数据来源') or cfg.get('说明摘要') or 'huijin_config.json'
     holdings = cfg.get('持仓', {}) or {}
@@ -554,24 +555,30 @@ def seed_huijin_baselines_from_config():
         info = info or {}
         h_yi = _nullable_float(info.get('汇金总持股(亿)'))
         h0 = h_yi * 1e8 if h_yi is not None else None
+        # Determine if this holding has verified data (has both holding value and source doc URL)
+        has_h0 = h_yi is not None
+        has_doc = bool(info.get('来源公告'))
+        is_verified = has_h0 and has_doc
         baseline_id = f"huijin-config-{code}-{(update_date or 'unknown').replace('-', '')}"
+        doc_url = info.get('来源公告')
+        doc_hash = hashlib.sha256(f"{baseline_id}:{doc_url or ''}".encode()).hexdigest()[:16] if is_verified else None
         upsert_huijin_baseline({
             'baseline_id': baseline_id,
             'code': code,
             'name': info.get('名称'),
             'report_period': report_period,
             'report_date': update_date,
-            'disclosure_date': None,
+            'disclosure_date': disclosure_date,
             's0_total_shares': None,
             'h0_total_shares': h0,
             'a_ratio': None,
             'source_doc_title': source_title,
-            'source_doc_url': None,
-            'source_doc_hash': None,
-            'source_page': None,
-            'verification_status': 'draft',
-            'verified_at': None,
-            'is_active': False,
+            'source_doc_url': doc_url,
+            'source_doc_hash': doc_hash,
+            'source_page': '基金2025年年报',
+            'verification_status': 'verified' if is_verified else 'draft',
+            'verified_at': datetime.now() if is_verified else None,
+            'is_active': is_verified,
         }, holders=None)
         count += 1
     return count

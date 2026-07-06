@@ -920,14 +920,15 @@ function renderHuijinWatch(){
   });
 
   let html = '<div class="hjw-head">';
-  html += '<div class="hjw-title">汇金观察</div>';
-  html += `<div class="hjw-summary"><span>已纳入 <b>${ok}</b></span><span>待核验 <b>${blocked}</b></span><span>推断源日期 <b>${inferred}</b></span>${tenX ? `<span class="hjw-signal">10倍量信号 <b>${tenX}</b></span>` : ''}<span>有效份额日 <b>${esc(latest_share_date)}</b></span><span>数据截至 ${esc(as_of)}</span></div>`;
+  html += '<div class="hjw-title">汇金 ETF 份额观察</div>';
+  html += `<div class="hjw-summary"><span>公式可算 <b>${ok}</b></span><span>待核验 <b>${blocked}</b></span><span>推断源日期 <b>${inferred}</b></span>${tenX ? `<span class="hjw-signal">10倍量信号 <b>${tenX}</b></span>` : ''}</div>`;
+  html += '<div class="hjw-subhead"><span>系统数据截至 <b>' + esc(as_of) + '</b></span><span>有效份额日 <b>' + esc(latest_share_date) + '</b></span></div>';
   html += '</div>';
 
-  // ─── Table 1: 汇金持仓概览 ───
-  html += '<div class="hjt-title"><span class="hjt-dot ok"></span>汇金持仓概览<span class="hjt-note">' + ok + '/' + items.length + ' 可计算，点击代码查看K线+区间趋势</span></div>';
-  html += '<div class="hjw-table-note"><b>字段说明</b>：<b>报告期</b>—汇金持有数据的来源报告（年报/半年报）。<b>披露日</b>—公告日期，此日期前的数据不可用。<b>份额日</b>—ETF总份额S1的最新交易日。<b>状态</b>—已纳入=有verified基准+数据完整，待核验=缺基准或数据质量问题。<b>区间</b>—Y_min~Y_max归一化区间，Y_max=B=S1/S0（当前份额比），Y_min=max(0, B-(1-A))，A=H0/S0（披露日汇金占比）。<b>用法</b>：趋势比单日值重要，持续扩大→买入观察，收窄→减仓观察，稳定/份额下降→观望。持续多日显著增量（约10倍量持续一周）可能是强信号。非实时持仓。<b>变化%</b>—份额相对N个交易日前的变化率。</div>';
-  html += '<div class="hjw-table-wrap"><table class="hjw-table"><thead><tr><th>代码</th><th>状态</th><th>区间/原因</th><th>较基准%</th><th>5日%</th><th>10日%</th><th>20日%</th><th>60日%</th><th>观察组</th><th>报告期</th><th>披露日</th><th>份额日</th></tr></thead><tbody>';
+  // ─── Table 1: 汇金 ETF 份额观察 ───
+  html += '<div class="hjt-title"><span class="hjt-dot ok"></span>汇金 ETF 份额观察<span class="hjt-note">' + ok + '/' + items.length + ' 公式可算，点击代码查看K线+区间趋势</span></div>';
+  html += '<div class="hjw-table-note"><b>字段说明</b>：<b>报告期</b>—汇金持有数据的来源报告（年报/半年报）。<b>披露日</b>—公告日期，此日期前的数据不可用。<b>份额日</b>—ETF总份额S1的最新交易日。<b>状态/质量</b>—公式可算=基准核验+数据完整可进入公式；待核验=缺基准/质量不达标。<b>区间</b>—Y_min~Y_max归一化区间，Y_max=B=S1/S0（当前份额比），Y_min=max(0, B-(1-A))，A=H0/S0（披露日汇金占比）。<b>用法</b>：趋势比单日值重要，持续扩大→增强观察，收窄→减弱观察，稳定/份额下降→观望。持续多日显著增量（约10倍量持续一周）可能是强信号。非实时持仓。<b>变化%</b>—份额相对N个交易日前的变化率。</div>';
+  html += '<div class="hjw-table-wrap"><table class="hjw-table"><thead><tr><th>代码</th><th>状态/质量</th><th>区间/原因</th><th>较基准%</th><th>5日%</th><th>10日%</th><th>20日%</th><th>60日%</th><th>观察组</th><th>报告期</th><th>披露日</th><th>份额日</th></tr></thead><tbody>';
   const okItems = items.filter(i => i.can_calculate_interval);
   rows.forEach(item => {
     const base = item.baseline || {};
@@ -935,13 +936,25 @@ function renderHuijinWatch(){
     const groups = (item.watch_groups || []).join(' / ');
     const inferredMark = share.source_date_inferred ? '<span class="hjw-warn">推断</span>' : '';
     const tenXSignal = item.ten_x_signal && item.ten_x_signal.active;
-    const status = item.can_calculate_interval ? '<span class="hjw-ok">已纳入</span>' : '<span class="hjw-block">待核验</span>';
+    // Quality markers
+    const hasDocUrl = base.source_doc_url ? 'Y' : 'N';
+    const hasDocHash = base.source_doc_hash ? 'Y' : 'N';
+    const srcName = (share.source_name || '').replace('legacy_', '旧.');
+    const qualityMarks = [];
+    if(item.can_calculate_interval){
+      qualityMarks.push('<span class="hjw-ok">公式可算</span>');
+      if(hasDocUrl === 'N') qualityMarks.push('<span class="hjw-warn">缺公告</span>');
+    } else {
+      qualityMarks.push('<span class="hjw-block">待核验</span>');
+    }
+    const status = qualityMarks.join(' ');
     const signalBadge = tenXSignal ? '<span class="hjw-signal-badge">10x</span>' : '';
     let result = esc(firstIssueText(item));
     if(item.can_calculate_interval && item.interval){
       result = `${fmtRatio(item.interval.y_min)} ~ ${fmtRatio(item.interval.y_max)}`;
     }
     const chg = (v) => v != null ? '<span class="hjw-chg' + (v < -10 ? ' hjw-chg-bad' : v > 2 ? ' hjw-chg-good' : '') + '">' + v.toFixed(1) + '%</span>' : _na();
+    const sourceInfo = srcName ? '<span class="hjw-source-tag">' + esc(srcName) + '</span>' : '';
     html += `<tr>
       <td><span class="code clickable" data-code="${esc(item.code)}" data-name="${esc(item.name || '')}">${esc(item.code)}</span></td>
       <td>${status} ${signalBadge}</td>
@@ -954,7 +967,7 @@ function renderHuijinWatch(){
       <td>${groups ? esc(groups) : _na()}</td>
       <td>${base.report_period ? esc(base.report_period) : _na()}</td>
       <td>${base.disclosure_date ? esc(base.disclosure_date) : _na()}</td>
-      <td>${share.date ? esc(share.date) : _na()} ${inferredMark}</td>
+      <td>${share.date ? esc(share.date) : _na()} ${inferredMark} ${sourceInfo}</td>
     </tr>`;
   });
   // Summary row
