@@ -1536,16 +1536,53 @@ def _pool_change_ratio(group_items, change_key, total_shares):
         return round(total_change * 10000 / total_shares, 4)  # 万份→百分比
 
 
+def _audit_item_additional_issues(code, baseline, share, audit):
+    """Generate additional warnings/blockers from audit checks not in _validate_huijin_inputs"""
+    issues = []
+    if not share or not share.get('total_shares'):
+        return issues
+    
+    # CURRENT_SHARES_BELOW_CONFIG_HOLDING
+    if baseline and baseline.get('h0_total_shares') and share.get('total_shares'):
+        h0 = float(baseline['h0_total_shares'])
+        s1 = float(share['total_shares'])
+        if h0 > 0 and s1 < h0 * 0.5:
+            issues.append(_issue('CURRENT_SHARES_BELOW_CONFIG_HOLDING', 'warning',
+                                f'当前份额({s1/1e8:.2f}亿)低于汇金披露持仓({h0/1e8:.2f}亿)的50%, 份额大幅缩水', code=code))
+    
+    # NON_TRADING_DATE on share data
+    if share.get('date'):
+        exchange = _code_exchange(code)
+        if not is_trading_day(share['date'], exchange):
+            issues.append(_issue('NON_TRADING_DATE', 'warning',
+                                f'份额日期 {share["date"]} 不是有效交易日', code=code, date=share['date']))
+    
+    # SHARE_GAP and ABNORMAL_JUMP from audit quality_flags
+    if audit:
+        flags = _flag_set(audit.get('quality_flags'))
+        for flag, label in [('SHARE_GAP', '份额数据断档'), ('ABNORMAL_JUMP', '份额异常跳变')]:
+            if flag in flags:
+                issues.append(_issue(flag, 'warning' if flag == 'SHARE_GAP' else 'warning',
+                                    f'{label}', code=code, date=share.get('date')))
+    
+    return issues
+
+
 def _compute_source_level(share, audit):
-    """A=交易所直采明确日期, B=交易所直采推断, C=legacy回填, D=异常阻断"""
+    """A=交易所直采, 源日期明确, 非stale | B=交易所直采, 源日期推断 | C=交易所直采但stale | D=legacy/异常/断档"""
     if not share or not audit:
         return 'D'
     src = audit.get('source_name', '')
     inferred = audit.get('source_date_inferred', False)
+    is_stale = share.get('stale', False)
     is_legacy = 'legacy' in src
     if is_legacy:
-        return 'C' if not inferred else 'D'
-    return 'A' if not inferred else 'B'
+        return 'D'
+    if inferred:
+        return 'B'
+    if is_stale:
+        return 'C'
+    return 'A'
 
 
 def _compute_quality_level(blockers, warnings, baseline, share, audit):
@@ -1664,6 +1701,13 @@ def get_huijin_overview(as_of_date=None):
         baseline = get_active_huijin_baseline(code, as_of_date=as_of)
         share = _latest_valid_share(code, as_of, exchange)
         blockers, warnings = _validate_huijin_inputs(code, baseline, share)
+        # Merge audit-level additional issues
+        audit_extra = _audit_item_additional_issues(code, baseline, share, audit)
+        for iss in audit_extra:
+            if iss.get('severity') == 'blocker':
+                blockers.append(iss)
+            else:
+                warnings.append(iss)
         interval = None
         if not blockers and baseline and share:
             interval = _calculate_huijin_interval(baseline, share)
@@ -1708,6 +1752,7 @@ def get_huijin_overview(as_of_date=None):
             # Computed metadata
             'source_level': _compute_source_level(share, audit),
             'quality_levels': _compute_quality_level(blockers, warnings, baseline, share, audit),
+            'quality_level': _compute_quality_level(blockers, warnings, baseline, share, audit)['overall_quality'],
             'observation_level': _compute_observation_level(changes, interval, _detect_ten_x_signal(code, as_of), blocked=bool(blockers)),
             'quality_tags': _compute_quality_tags(baseline, share, audit, warnings),
             'signal_reasons': _compute_signal_reasons(changes, interval, _detect_ten_x_signal(code, as_of)),
