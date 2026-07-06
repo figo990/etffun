@@ -1096,7 +1096,11 @@ function _sfRender(){
   const rows = Object.values(merged);
   if(!rows.length){ wrap.innerHTML='<div class="sf-empty">暂无数据</div>'; return; }
 
-  const maxAbs = Math.max(...rows.map(s => Math.abs(Number(s[_sfSortPeriod] || 0))), 1);
+  const maxAbsByPeriod = {};
+  periodKeys.forEach(p => {
+    maxAbsByPeriod[p] = Math.max(...rows.map(s => Math.abs(Number(s[p] || 0))), 1);
+  });
+
   const sorted = [...rows].sort((a,b) => {
     const va = Number(a[_sfSortPeriod] || 0);
     const vb = Number(b[_sfSortPeriod] || 0);
@@ -1118,7 +1122,7 @@ function _sfRender(){
     periodKeys.forEach(p => {
       const nm = Number(s[p] || 0);
       const cls = nm >= 0 ? 'pos' : 'neg';
-      const pct = maxAbs > 0 ? Math.abs(nm) / maxAbs : 0;
+      const pct = maxAbsByPeriod[p] > 0 ? Math.abs(nm) / maxAbsByPeriod[p] : 0;
       const barDir = nm >= 0 ? 'right' : 'left';
       html += `<td class="sf-num ${cls}"><div class="sf-bar-wrap"><div class="sf-bar sf-bar-${barDir}" style="width:${(pct*100).toFixed(0)}%"></div><span class="sf-bar-val">${fmtNum(nm)}</span></div></td>`;
     });
