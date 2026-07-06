@@ -1700,6 +1700,7 @@ def get_huijin_overview(as_of_date=None):
         exchange = _code_exchange(code)
         baseline = get_active_huijin_baseline(code, as_of_date=as_of)
         share = _latest_valid_share(code, as_of, exchange)
+        audit = share.get('audit') if share else None
         blockers, warnings = _validate_huijin_inputs(code, baseline, share)
         # Merge audit-level additional issues
         audit_extra = _audit_item_additional_issues(code, baseline, share, audit)
@@ -1712,7 +1713,6 @@ def get_huijin_overview(as_of_date=None):
         if not blockers and baseline and share:
             interval = _calculate_huijin_interval(baseline, share)
         changes = _share_changes(code, share['date'], baseline=baseline) if share else {}
-        audit = share.get('audit') if share else None
         items.append({
             'code': code,
             'name': info.get('name'),
