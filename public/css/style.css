@@ -262,6 +262,10 @@ tbody tr:hover td{background:#fff6e5}
 /* Pool table */
 .hjw-pool-table{font-size:11px}
 .hjw-pool-table td{padding:4px 8px}
+.hjw-pool-table .hjw-pool-group td{background:#f0faf8;border-top:1px solid #cbd5e0}
+.hjw-pool-table .hjw-pool-child td{font-size:10px;color:#4a5568;padding:2px 8px;border-top:none}
+.hjw-pool-indent{padding-left:16px!important}
+.hjw-pool-share{display:inline-block;margin-left:4px;padding:0 4px;border-radius:2px;background:#edf2f7;color:#718096;font-size:10px}
 .hjw-num{text-align:right;font-family:Arial,Consolas,monospace;font-variant-numeric:tabular-nums}
 .hjw-pool-table .hjw-num{font-size:11px}
 
@@ -325,6 +329,18 @@ td.cell-code{position:relative}
 .hcl-band i{background:#00b894;height:8px;border-radius:1px;opacity:0.4}
 .hcl-b i{background:#00b894;height:2px}
 .hcl-a i{border-top:2px dashed #f39c12;height:0;width:18px;background:transparent}
+
+/* Huijin detail section */
+.hjw-detail-section{border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc;margin-top:8px;padding:8px 10px;font-size:12px;line-height:1.6}
+.hjw-detail-title{font-size:13px;font-weight:700;color:#2f855a;margin-bottom:6px}
+.hjw-detail-row{display:flex;flex-wrap:wrap;gap:4px 10px;padding:2px 0;border-bottom:1px solid #f0f0f0}
+.hjw-detail-row:last-child{border-bottom:none}
+.hjw-detail-label{color:#718096;min-width:48px;font-size:11px;white-space:nowrap}
+.hjw-detail-val{color:#2d3748;font-weight:600;font-family:Arial,Consolas,monospace}
+.hjw-detail-blocked{color:#c53030;font-weight:600}
+.hjw-detail-signal{background:#fffbeb;padding:3px 6px;border-radius:3px;color:#7b341e;font-weight:600}
+.hjw-doc-link{color:#00b894;text-decoration:none;font-weight:600}
+.hjw-doc-link:hover{text-decoration:underline}
 
 @media(max-width:900px){
   .modal-content{width:100%;max-height:100vh;border-radius:0}

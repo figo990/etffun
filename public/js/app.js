@@ -880,25 +880,60 @@ function huijinOverviewItem(code){
 function renderHuijinDetailMeta(code){
   const item = huijinOverviewItem(code);
   if(!item) return '';
+  const base = item.baseline || {};
   const share = item.latest_share || {};
   const source = share.source_name || '待审计';
   const sourceDate = share.source_date || share.date || '';
   const inferred = share.source_date_inferred ? ' 推断' : '';
-  const status = item.can_calculate_interval ? '已纳入' : '待核验';
-  let html = '<span class="dm-item">汇金观察:<b>' + esc(status) + '</b></span>';
-  html += '<span class="dm-item">份额日:<b>' + esc(share.date || '--') + '</b></span>';
-  html += '<span class="dm-item">来源:<b>' + esc(source + (sourceDate ? ' ' + sourceDate : '') + inferred) + '</b></span>';
+  const status = item.can_calculate_interval ? '公式可算' : '待核验';
+  let html = '<div class="hjw-detail-section">';
+  html += '<div class="hjw-detail-title">汇金 ETF 份额观察</div>';
+
+  // Baseline info
+  if(base.s0_total_shares){
+    const s0 = (base.s0_total_shares / 1e8).toFixed(2);
+    const h0 = (base.h0_total_shares / 1e8).toFixed(2);
+    const a = (base.a_ratio * 100).toFixed(1);
+    html += '<div class="hjw-detail-row"><span class="hjw-detail-label">基准(S0)</span><span class="hjw-detail-val">' + s0 + '亿</span>';
+    html += '<span class="hjw-detail-label">汇金(H0)</span><span class="hjw-detail-val">' + h0 + '亿</span>';
+    html += '<span class="hjw-detail-label">占比(A)</span><span class="hjw-detail-val">' + a + '%</span></div>';
+  }
+
+  // Current shares and interval
   if(item.can_calculate_interval && item.interval){
-    html += '<span class="dm-item">归一化区间:<b>' + fmtRatio(item.interval.y_min) + '~' + fmtRatio(item.interval.y_max) + '</b></span>';
-    html += '<span class="dm-item">公式:<b>B=S1/S0, Y=max(0,B-(1-A))~B</b></span>';
+    const iv = item.interval;
+    const s1 = share.total_shares ? (share.total_shares / 1e8).toFixed(2) : '--';
+    const b = (iv.b_ratio * 100).toFixed(2);
+    html += '<div class="hjw-detail-row"><span class="hjw-detail-label">当前(S1)</span><span class="hjw-detail-val">' + s1 + '亿</span>';
+    html += '<span class="hjw-detail-label">倍数(B)</span><span class="hjw-detail-val">' + b + '%</span>';
+    html += '<span class="hjw-detail-label">区间(Y)</span><span class="hjw-detail-val">' + fmtRatio(iv.y_min) + ' ~ ' + fmtRatio(iv.y_max) + '</span></div>';
+
     if(item.ten_x_signal && item.ten_x_signal.active){
-      html += '<span class="dm-item">异常信号:<b class="hjw-signal">10倍量持续' + item.ten_x_signal.consecutive_days + '天</b></span>';
+      html += '<div class="hjw-detail-row hjw-detail-signal">🔴 10倍量信号: 持续' + item.ten_x_signal.consecutive_days + '天, 基准量=' + fmtVol(item.ten_x_signal.baseline_volume) + ', 当前倍率=' + item.ten_x_signal.current_ratio + 'x</div>';
     }
-  }else{
+  } else {
     const reason = firstIssueText(item) || '缺少已核验基准或有效份额审计';
     const extra = (code === '510230' || code === '588000') ? '（需基金定报原文确认汇金持股H0）' : '';
-    html += '<span class="dm-item">阻断:<b>' + esc(reason) + extra + '</b></span>';
+    html += '<div class="hjw-detail-row hjw-detail-blocked">阻断: ' + esc(reason) + extra + '</div>';
   }
+
+  // Source and quality
+  const hasDocUrl = base.source_doc_url ? 'Y' : 'N';
+  const docLink = base.source_doc_url ? '<a href="' + esc(base.source_doc_url) + '" target="_blank" class="hjw-doc-link">查看公告</a>' : '';
+  html += '<div class="hjw-detail-row"><span class="hjw-detail-label">份额源</span><span class="hjw-detail-val">' + esc(source) + ' ' + esc(sourceDate) + inferred + '</span>';
+  if(docLink) html += '<span class="hjw-detail-label">公告</span><span class="hjw-detail-val">' + docLink + '</span>';
+  html += '</div>';
+
+  // Quality marks
+  const qmarks = [];
+  if(inferred) qmarks.push('<span class="hjw-warn">推断</span>');
+  if(hasDocUrl === 'N') qmarks.push('<span class="hjw-block">缺公告</span>');
+  if(share.stale) qmarks.push('<span class="hjw-warn">陈旧</span>');
+  if(qmarks.length){
+    html += '<div class="hjw-detail-row"><span class="hjw-detail-label">质量</span><span class="hjw-detail-val">' + qmarks.join(' ') + '</span></div>';
+  }
+
+  html += '</div>';
   return html;
 }
 
@@ -1004,7 +1039,7 @@ function renderHuijinWatch(){
     huijinOverview.groups.forEach(g => {
       const codes = (g.codes || []).join(' / ');
       const chg = (v) => v != null ? '<span class="hjw-chg' + (v < -10 ? ' hjw-chg-bad' : v > 2 ? ' hjw-chg-good' : '') + '">' + v.toFixed(1) + '%</span>' : _na();
-      html += `<tr>
+      html += `<tr class="hjw-pool-group">
         <td><b>${esc(g.group_name)}</b></td>
         <td>${esc(codes)}</td>
         <td class="hjw-num">${g.latest_total_shares ? (g.latest_total_shares / 1e8).toFixed(2) : _na()}</td>
@@ -1013,6 +1048,24 @@ function renderHuijinWatch(){
         <td class="hjw-num">${chg(g.share_change_ratio_20d)}</td>
         <td class="hjw-num">${chg(g.share_change_ratio_60d)}</td>
       </tr>`;
+      // Intra-group contribution breakdown
+      const gCodes = g.codes || [];
+      const groupItems = items.filter(i => gCodes.includes(i.code));
+      groupItems.forEach(gi => {
+        const giShare = gi.latest_share || {};
+        const giShares = giShare.total_shares || 0;
+        const giPct = g.latest_total_shares > 0 ? (giShares / g.latest_total_shares * 100).toFixed(1) : '--';
+        const giChg = (v) => v != null ? '<span class="hjw-chg' + (v < -10 ? ' hjw-chg-bad' : v > 2 ? ' hjw-chg-good' : '') + '">' + v.toFixed(1) + '%</span>' : _na();
+        html += `<tr class="hjw-pool-child">
+          <td class="hjw-pool-indent">└ ${esc(gi.name || gi.code)}</td>
+          <td>${esc(gi.code)}</td>
+          <td class="hjw-num">${giShares > 0 ? (giShares / 1e8).toFixed(2) : _na()}<span class="hjw-pool-share">${giPct}%</span></td>
+          <td class="hjw-num">${giChg(gi.share_change_ratio_5d)}</td>
+          <td class="hjw-num">${giChg(gi.share_change_ratio_10d)}</td>
+          <td class="hjw-num">${giChg(gi.share_change_ratio_20d)}</td>
+          <td class="hjw-num">${giChg(gi.share_change_ratio_60d)}</td>
+        </tr>`;
+      });
     });
     html += '</tbody></table></div>';
   }
