@@ -561,6 +561,10 @@ def seed_huijin_baselines_from_config():
         is_verified = has_h0 and has_doc
         baseline_id = f"huijin-config-{code}-{(update_date or 'unknown').replace('-', '')}"
         doc_url = info.get('来源公告')
+        s_yi = _nullable_float(info.get('披露日总份额(亿)'))
+        s0 = s_yi * 1e8 if s_yi is not None else None
+        a_ratio_val = _nullable_float(info.get('汇金占比'))
+        is_verified = has_h0 and has_doc and s_yi is not None and a_ratio_val is not None
         doc_hash = hashlib.sha256(f"{baseline_id}:{doc_url or ''}".encode()).hexdigest()[:16] if is_verified else None
         upsert_huijin_baseline({
             'baseline_id': baseline_id,
@@ -569,9 +573,9 @@ def seed_huijin_baselines_from_config():
             'report_period': report_period,
             'report_date': update_date,
             'disclosure_date': disclosure_date,
-            's0_total_shares': None,
+            's0_total_shares': s0,
             'h0_total_shares': h0,
-            'a_ratio': None,
+            'a_ratio': a_ratio_val,
             'source_doc_title': source_title,
             'source_doc_url': doc_url,
             'source_doc_hash': doc_hash,
