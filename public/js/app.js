@@ -949,6 +949,13 @@ function renderHuijinWatch(){
   const latest_share_date = huijinOverview.latest_share_date || '';
   const tenX = huijinOverview.ten_x_active_count || 0;
   const tenXCodes = huijinOverview.ten_x_active_codes || [];
+  const hasDocUrl = (f) => f.baseline && f.baseline.source_doc_url ? 1 : 0;
+  const hasDocHash = (f) => f.baseline && f.baseline.source_doc_hash ? 1 : 0;
+  const verifiedDoc = items.filter(i => i.can_calculate_interval && hasDocUrl(i) && hasDocHash(i)).length;
+  const exchangeSrc = items.filter(i => i.latest_share && i.latest_share.source_name && !i.latest_share.source_name.includes('legacy')).length;
+  const stale = items.filter(i => i.latest_share && i.latest_share.stale).length;
+  const auditBlockers = items.filter(i => i.blockers && i.blockers.length).length;
+  const hasCffex = cffexPositionRank && cffexPositionRank.length > 0;
   const rows = [...items].sort((a,b) => {
     if(a.can_calculate_interval !== b.can_calculate_interval) return a.can_calculate_interval ? -1 : 1;
     return String(a.code).localeCompare(String(b.code));
@@ -958,6 +965,9 @@ function renderHuijinWatch(){
   html += '<div class="hjw-title">汇金 ETF 份额观察</div>';
   html += `<div class="hjw-summary"><span>公式可算 <b>${ok}</b></span><span>待核验 <b>${blocked}</b></span><span>推断源日期 <b>${inferred}</b></span>${tenX ? `<span class="hjw-signal">10倍量信号 <b>${tenX}</b></span>` : ''}</div>`;
   html += '<div class="hjw-subhead"><span>系统数据截至 <b>' + esc(as_of) + '</b></span><span>有效份额日 <b>' + esc(latest_share_date) + '</b></span></div>';
+
+  // ─── Quality summary bar ───
+  html += '<div class="hjw-quality-bar"><span>基准核验 <b>' + verifiedDoc + '/' + items.length + '</b></span><span>交易所份额源 <b>' + exchangeSrc + '/' + items.length + '</b></span><span>推断源日期 <b>' + inferred + '</b></span>' + (stale ? '<span class="hjw-warn">stale <b>' + stale + '</b></span>' : '') + (auditBlockers ? '<span class="hjw-block">blocker <b>' + auditBlockers + '</b></span>' : '') + '<span>期指 ' + (hasCffex ? '<b class="hjw-ok">有</b>' : '<b class="hjw-warn">无</b>') + '</span></div>';
   html += '</div>';
 
   // ─── Table 1: 汇金 ETF 份额观察 ───
@@ -974,25 +984,62 @@ function renderHuijinWatch(){
     // Quality markers
     const hasDocUrl = base.source_doc_url ? 'Y' : 'N';
     const hasDocHash = base.source_doc_hash ? 'Y' : 'N';
-    const srcName = (share.source_name || '').replace('legacy_', '旧.');
-    const qualityMarks = [];
-    if(item.can_calculate_interval){
-      qualityMarks.push('<span class="hjw-ok">公式可算</span>');
-      if(hasDocUrl === 'N') qualityMarks.push('<span class="hjw-warn">缺公告</span>');
+    const srcName = (share.source_name || '');
+    const srcShort = srcName.replace('legacy_', '旧.');
+    const srcIsLegacy = srcName.includes('legacy');
+    const srcIsInferred = share.source_date_inferred;
+    const srcHasDate = share.source_date ? 'Y' : 'N';
+    // Share source grade
+    let grade, gradeCls;
+    if(!srcIsLegacy && !srcIsInferred){ grade='A'; gradeCls='hjw-grade-a'; }
+    else if(!srcIsLegacy && srcIsInferred){ grade='B'; gradeCls='hjw-grade-b'; }
+    else if(srcIsLegacy && !srcIsInferred){ grade='C'; gradeCls='hjw-grade-c'; }
+    else { grade='D'; gradeCls='hjw-grade-d'; }
+    // Status enum
+    let statusHtml;
+    const hasBaseline = base.s0_total_shares != null;
+    const baseVerified = base.verification_status === 'verified';
+    const hasAllSource = hasDocUrl === 'Y' && hasDocHash === 'Y';
+    const hasBlocker = item.blockers && item.blockers.length > 0;
+    if(hasBlocker){
+      statusHtml = '<span class="hjw-block">数据阻断</span>';
+    } else if(baseVerified && hasAllSource && item.can_calculate_interval){
+      statusHtml = '<span class="hjw-ok">已核验可观察</span>';
+    } else if(item.can_calculate_interval){
+      statusHtml = '<span class="hjw-ok">公式可预览</span>';
     } else {
-      qualityMarks.push('<span class="hjw-block">待核验</span>');
+      statusHtml = '<span class="hjw-block">待核验</span>';
     }
-    const status = qualityMarks.join(' ');
+    // Quality tags
+    const tags = [];
+    if(baseVerified && hasDocUrl === 'Y') tags.push('<span class="hjw-tag">基准已核验</span>');
+    else if(hasDocUrl === 'N') tags.push('<span class="hjw-tag hjw-tag-warn">原文待补</span>');
+    if(!srcIsLegacy) tags.push('<span class="hjw-tag hjw-tag-ok">' + grade + ' 交易所直采</span>');
+    else tags.push('<span class="hjw-tag hjw-tag-warn">' + grade + ' legacy</span>');
+    if(srcIsInferred) tags.push('<span class="hjw-tag hjw-tag-warn">源日期推断</span>');
+    if(share.stale) tags.push('<span class="hjw-tag hjw-tag-warn">stale</span>');
+    // Observation level
+    let obsLevel = '';
+    if(item.can_calculate_interval && item.interval){
+      const chg5d = item.share_change_ratio_5d;
+      const chg20d = item.share_change_ratio_20d;
+      const chg60d = item.share_change_ratio_60d;
+      const tenXActive = item.ten_x_signal && item.ten_x_signal.active;
+      if(tenXActive) obsLevel = '<span class="hjw-signal-badge">强观察</span>';
+      else if(chg5d != null && chg5d > 3 && chg20d != null && chg20d > 5) obsLevel = '<span class="hjw-ok">增强观察</span>';
+      else if(chg5d != null && chg5d < -3 && chg20d != null && chg20d < -5) obsLevel = '<span class="hjw-warn">减弱观察</span>';
+      else obsLevel = '<span class="hjw-tag">无信号</span>';
+    }
     const signalBadge = tenXSignal ? '<span class="hjw-signal-badge">10x</span>' : '';
     let result = esc(firstIssueText(item));
     if(item.can_calculate_interval && item.interval){
       result = `${fmtRatio(item.interval.y_min)} ~ ${fmtRatio(item.interval.y_max)}`;
     }
     const chg = (v) => v != null ? '<span class="hjw-chg' + (v < -10 ? ' hjw-chg-bad' : v > 2 ? ' hjw-chg-good' : '') + '">' + v.toFixed(1) + '%</span>' : _na();
-    const sourceInfo = srcName ? '<span class="hjw-source-tag">' + esc(srcName) + '</span>' : '';
+    const sourceInfo = srcShort ? '<span class="hjw-source-tag">' + esc(srcShort) + '</span>' : '';
     html += `<tr>
-      <td><span class="code clickable" data-code="${esc(item.code)}" data-name="${esc(item.name || '')}">${esc(item.code)}</span></td>
-      <td>${status} ${signalBadge}</td>
+      <td><span class="code clickable" data-code="${esc(item.code)}" data-name="${esc(item.name || '')}">${esc(item.code)}<br><span class="hjw-row-tags">${obsLevel}</span></span></td>
+      <td>${statusHtml} ${signalBadge}<br><span class="hjw-row-tags">${tags.join(' ')}</span></td>
       <td class="hjw-result" title="${esc(result)}">${result || _na()}</td>
       <td class="hjw-num">${item.vs_baseline_pct != null ? chg(item.vs_baseline_pct) : _na()}</td>
       <td class="hjw-num">${chg(item.share_change_ratio_5d)}</td>
@@ -1084,9 +1131,9 @@ function renderHuijinWatch(){
   }
 
   // ─── Table 3: 期指辅助 ───
+  html += '<div class="hjt-title"><span class="hjt-dot ok"></span>期指辅助<span class="hjt-note">中金所排名，不进入核心公式，仅辅助验证</span></div>';
   if(cffexPositionRank.length){
     const rankRows = cffexPositionRank.slice(0, 20);
-    html += '<div class="hjt-title"><span class="hjt-dot ok"></span>期指辅助<span class="hjt-note">中金所排名，不进入核心公式，仅辅助验证</span></div>';
     html += '<div class="hjw-table-note"><b>说明</b>：中金所股指期货成交持仓排名。<b>持买单量↑ + ETF份额↑</b>→需交叉验证，可能配合。<b>持卖单量异常↑</b>→套保盘增加，风险偏好可能下降。以上不能机械等同于汇金操作。当前展示最新交易日数据，不显示历史趋势。</div>';
     html += '<div class="hjw-table-wrap"><table class="hjw-table hjw-cffex-table"><thead><tr><th>合约</th><th>类型</th><th>排名</th><th>会员</th><th>数量</th><th>变化</th></tr></thead><tbody>';
     rankRows.forEach(r => {
@@ -1100,6 +1147,8 @@ function renderHuijinWatch(){
       </tr>`;
     });
     html += '</tbody></table></div>';
+  } else {
+    html += '<div class="hjw-table-note" style="color:#718096">期指辅助暂无数据（交易日18:30后更新），不影响核心公式，仅影响辅助验证。</div>';
   }
 
   panel.innerHTML = html;
