@@ -956,7 +956,6 @@ function renderHuijinWatch(){
       <td class="hjw-num">${item.vs_baseline_pct != null ? chg(item.vs_baseline_pct) : _na()}</td>
     </tr>`;
   });
-  });
   html += '</tbody></table></div>';
 
   // ─── Table 2: ETF 池份额观察 ───
