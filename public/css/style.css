@@ -278,6 +278,11 @@ tbody tr:hover td{background:#fff6e5}
 .hjw-chg{font-weight:600;font-family:Arial,Consolas,monospace}
 .hjw-chg-bad{color:#d94b45}
 .hjw-chg-good{color:#16833a}
+/* Huijin result column truncation */
+.hjw-result{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:900px){
+  .hjw-result{max-width:100px}
+}
 
 /* Code column clickable */
 .cell-code{cursor:pointer}

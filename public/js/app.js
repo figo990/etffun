@@ -948,7 +948,7 @@ function renderHuijinWatch(){
       <td>${base.disclosure_date ? esc(base.disclosure_date) : _na()}</td>
       <td>${share.date ? esc(share.date) : _na()} ${inferredMark}</td>
       <td>${status} ${signalBadge}</td>
-      <td>${result || _na()}</td>
+      <td class="hjw-result" title="${esc(result)}">${result || _na()}</td>
       <td class="hjw-num">${chg(item.share_change_ratio_5d)}</td>
       <td class="hjw-num">${chg(item.share_change_ratio_10d)}</td>
       <td class="hjw-num">${chg(item.share_change_ratio_20d)}</td>
