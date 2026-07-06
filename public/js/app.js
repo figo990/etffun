@@ -927,7 +927,8 @@ function renderHuijinWatch(){
   // ─── Table 1: 汇金持仓概览 ───
   html += '<div class="hjt-title"><span class="hjt-dot ok"></span>汇金持仓概览<span class="hjt-note">' + ok + '/' + items.length + ' 可计算，点击代码查看K线+区间趋势</span></div>';
   html += '<div class="hjw-table-note"><b>字段说明</b>：<b>报告期</b>—汇金持有数据的来源报告（年报/半年报）。<b>披露日</b>—公告日期，此日期前的数据不可用。<b>份额日</b>—ETF总份额S1的最新交易日。<b>状态</b>—已纳入=有verified基准+数据完整，待核验=缺基准或数据质量问题。<b>区间</b>—Y_min~Y_max归一化区间，Y_max=B=S1/S0（当前份额比），Y_min=max(0, B-(1-A))，A=H0/S0（披露日汇金占比）。<b>用法</b>：趋势比单日值重要，持续扩大→买入观察，收窄→减仓观察，稳定/份额下降→观望。持续多日显著增量（约10倍量持续一周）可能是强信号。非实时持仓。<b>变化%</b>—份额相对N个交易日前的变化率。</div>';
-  html += '<div class="hjw-table-wrap"><table class="hjw-table"><thead><tr><th>代码</th><th>观察组</th><th>报告期</th><th>披露日</th><th>份额日</th><th>状态</th><th>区间/原因</th><th>5日%</th><th>10日%</th><th>20日%</th><th>60日%</th><th>较基准%</th></tr></thead><tbody>';
+  html += '<div class="hjw-table-wrap"><table class="hjw-table"><thead><tr><th>代码</th><th>状态</th><th>区间/原因</th><th>较基准%</th><th>5日%</th><th>10日%</th><th>20日%</th><th>60日%</th><th>观察组</th><th>报告期</th><th>披露日</th><th>份额日</th></tr></thead><tbody>';
+  const okItems = items.filter(i => i.can_calculate_interval);
   rows.forEach(item => {
     const base = item.baseline || {};
     const share = item.latest_share || {};
@@ -943,19 +944,43 @@ function renderHuijinWatch(){
     const chg = (v) => v != null ? '<span class="hjw-chg' + (v < -10 ? ' hjw-chg-bad' : v > 2 ? ' hjw-chg-good' : '') + '">' + v.toFixed(1) + '%</span>' : _na();
     html += `<tr>
       <td><span class="code clickable" data-code="${esc(item.code)}" data-name="${esc(item.name || '')}">${esc(item.code)}</span></td>
-      <td>${groups ? esc(groups) : _na()}</td>
-      <td>${base.report_period ? esc(base.report_period) : _na()}</td>
-      <td>${base.disclosure_date ? esc(base.disclosure_date) : _na()}</td>
-      <td>${share.date ? esc(share.date) : _na()} ${inferredMark}</td>
       <td>${status} ${signalBadge}</td>
       <td class="hjw-result" title="${esc(result)}">${result || _na()}</td>
+      <td class="hjw-num">${item.vs_baseline_pct != null ? chg(item.vs_baseline_pct) : _na()}</td>
       <td class="hjw-num">${chg(item.share_change_ratio_5d)}</td>
       <td class="hjw-num">${chg(item.share_change_ratio_10d)}</td>
       <td class="hjw-num">${chg(item.share_change_ratio_20d)}</td>
       <td class="hjw-num">${chg(item.share_change_ratio_60d)}</td>
-      <td class="hjw-num">${item.vs_baseline_pct != null ? chg(item.vs_baseline_pct) : _na()}</td>
+      <td>${groups ? esc(groups) : _na()}</td>
+      <td>${base.report_period ? esc(base.report_period) : _na()}</td>
+      <td>${base.disclosure_date ? esc(base.disclosure_date) : _na()}</td>
+      <td>${share.date ? esc(share.date) : _na()} ${inferredMark}</td>
     </tr>`;
   });
+  // Summary row
+  if(okItems.length > 0){
+    const avg = (field) => {
+      const vals = okItems.map(i => i[field]).filter(v => v != null && isFinite(v));
+      return vals.length ? vals.reduce((a,b) => a+b, 0) / vals.length : null;
+    };
+    const avgVsBase = avg('vs_baseline_pct');
+    const avg5d = avg('share_change_ratio_5d');
+    const avg10d = avg('share_change_ratio_10d');
+    const avg20d = avg('share_change_ratio_20d');
+    const avg60d = avg('share_change_ratio_60d');
+    const chgS = (v) => v != null ? '<span class="hjw-chg' + (v < -10 ? ' hjw-chg-bad' : '') + '">' + v.toFixed(1) + '%</span>' : _na();
+    html += `<tr class="hjw-summary-row">
+      <td><b>平均(${okItems.length}只)</b></td>
+      <td></td>
+      <td></td>
+      <td class="hjw-num">${chgS(avgVsBase)}</td>
+      <td class="hjw-num">${chgS(avg5d)}</td>
+      <td class="hjw-num">${chgS(avg10d)}</td>
+      <td class="hjw-num">${chgS(avg20d)}</td>
+      <td class="hjw-num">${chgS(avg60d)}</td>
+      <td colspan="4"></td>
+    </tr>`;
+  }
   html += '</tbody></table></div>';
 
   // ─── Table 2: ETF 池份额观察 ───

@@ -280,6 +280,7 @@ tbody tr:hover td{background:#fff6e5}
 .hjw-chg-good{color:#16833a}
 /* Huijin result column truncation */
 .hjw-result{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hjw-summary-row td{border-top:2px solid #00b894;background:#f0faf8;font-weight:600}
 @media(max-width:900px){
   .hjw-result{max-width:100px}
 }
