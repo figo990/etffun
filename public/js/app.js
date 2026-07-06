@@ -1540,6 +1540,19 @@ function renderHuijinTrendChart(series, baseline){
 
   ctx.clearRect(0, 0, w, h);
 
+  // ─── Anomaly overlays: data gaps ───
+  for(let i=1; i<valid.length; i++){
+    const days = (new Date(valid[i].date) - new Date(valid[i-1].date)) / 86400000;
+    if(days > 5){
+      const gx = (toX(i-1) + toX(i)) / 2;
+      ctx.strokeStyle = 'rgba(231,76,60,0.25)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2,3]);
+      ctx.beginPath(); ctx.moveTo(gx, pad.top); ctx.lineTo(gx, pad.top + chartH); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
   // Grid lines
   ctx.strokeStyle = '#f0f0f0';
   ctx.lineWidth = 1;
@@ -1611,6 +1624,18 @@ function renderHuijinTrendChart(series, baseline){
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText('A=' + aVal.toFixed(3), pad.left + 3, ay - 3);
+  }
+
+  // ─── Anomaly markers: inferred dates ───
+  for(let i=0; i<valid.length; i++){
+    if(valid[i].source_date_inferred){
+      const x = toX(i);
+      const y = toY(valid[i].b_ratio != null ? valid[i].b_ratio : valid[i].y_max);
+      ctx.fillStyle = 'rgba(227,52,47,0.5)';
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   // X-axis date labels
