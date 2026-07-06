@@ -1053,99 +1053,90 @@ function rankTypeText(type){
   return type || '';
 }
 
-let _sfData = [];
-let _sfPeriod = '1d';
-let _sfSortCol = 'net_main';
+let _sfAllData = {};
+let _sfSortPeriod = '1d';
 let _sfSortDir = 'desc';
-let _sfActualDays = 0;
 
 async function loadSectorFlow(){
-  await _sfLoad(_sfPeriod);
+  const periods = ['1d','3d','5d','10d','20d'];
+  const labels = {'1d':'即时','3d':'3日','5d':'5日','10d':'10日','20d':'20日'};
+  const results = await Promise.all(periods.map(p =>
+    fetch('/api/etf/sector-flow?period='+p).then(r => r.json()).catch(() => ({}))
+  ));
+  _sfAllData = {};
+  let hasData = false;
+  periods.forEach((p, i) => {
+    const data = results[i].data || [];
+    if(data.length) hasData = true;
+    _sfAllData[p] = {data, label: labels[p]};
+  });
+  if(!hasData) return;
+  const panel = document.getElementById('sectorFlowPanel');
+  panel.style.display = '';
   const body = document.getElementById('sectorFlowBody');
   if(body) body.style.display = 'none';
-}
-
-async function _sfLoad(period){
-  try{
-    const r=await fetch('/api/etf/sector-flow?period='+period);
-    const d=await r.json();
-    const data = d.data || d;
-    if(!data || !data.length) return;
-    _sfData = data;
-    _sfActualDays = d.actual_days || 0;
-    _sfPeriod = period;
-    const panel = document.getElementById('sectorFlowPanel');
-    panel.style.display = '';
-    _sfRender();
-  }catch(e){}
+  _sfRender();
 }
 
 function _sfRender(){
   const wrap = document.getElementById('sfTableWrap');
-  if(!_sfData.length){ wrap.innerHTML='<div class="sf-empty">暂无数据</div>'; return; }
+  const periods = ['1d','3d','5d','10d','20d'];
+  const labels = {'1d':'即时','3d':'3日','5d':'5日','10d':'10日','20d':'20日'};
 
-  // Show actual days note for multi-period
-  const ndays = {'1d':1,'3d':3,'5d':5,'10d':10,'20d':20}[_sfPeriod] || 1;
-  let daysNote = '';
-  if(_sfActualDays > 0 && _sfActualDays < ndays){
-    daysNote = '<div class="sf-days-note">仅 ' + _sfActualDays + '/' + ndays + ' 个交易日数据（数据采集中，' + ndays + '日后完整）</div>';
-  }
+  // Build merged map: sector_name -> {1d: net, 3d: net, ...}
+  const merged = {};
+  periods.forEach(p => {
+    (_sfAllData[p]?.data || []).forEach(s => {
+      const name = s.sector_name;
+      if(!merged[name]) merged[name] = {sector_name: name, '1d': null, '3d': null, '5d': null, '10d': null, '20d': null};
+      merged[name][p] = Number(s.net_main || 0);
+    });
+  });
 
-  const maxAbs = Math.max(..._sfData.map(s => Math.abs(Number(s[_sfSortCol] || 0))), 1);
-  const sorted = [..._sfData].sort((a,b) => {
-    const va = Number(a[_sfSortCol] || 0);
-    const vb = Number(b[_sfSortCol] || 0);
+  const rows = Object.values(merged);
+  if(!rows.length){ wrap.innerHTML='<div class="sf-empty">暂无数据</div>'; return; }
+
+  const maxAbs = Math.max(...rows.map(s => Math.abs(Number(s[_sfSortPeriod] || 0))), 1);
+  const sorted = [...rows].sort((a,b) => {
+    const va = Number(a[_sfSortPeriod] || 0);
+    const vb = Number(b[_sfSortPeriod] || 0);
     return _sfSortDir === 'desc' ? vb - va : va - vb;
   });
 
-  const cols = [
-    {key:'sector_name', label:'行业',      align:'left'},
-    {key:'net_main',    label:'主力净流入', align:'right'},
-    {key:'net_super_large', label:'超大单', align:'right'},
-    {key:'net_large',   label:'大单',      align:'right'},
-    {key:'net_medium',  label:'中单',      align:'right'},
-    {key:'net_small',   label:'小单',      align:'right'},
-  ];
-
-  let html = daysNote + '<table class="sf-table"><tr>';
-  cols.forEach(c => {
-    const active = c.key === _sfSortCol;
+  // Column headers: 行业, then each period (clickable for sort)
+  const periodKeys = ['1d','3d','5d','10d','20d'];
+  let html = '<table class="sf-table"><tr><th class="sf-th" style="text-align:left">行业</th>';
+  periodKeys.forEach(p => {
+    const active = p === _sfSortPeriod;
     const arrow = active ? (_sfSortDir === 'desc' ? ' ▼' : ' ▲') : '';
-    html += `<th class="sf-th" data-key="${c.key}" style="text-align:${c.align}">${c.label}${arrow}</th>`;
+    html += `<th class="sf-th" data-period="${p}" style="text-align:right">${labels[p]}${arrow}</th>`;
   });
   html += '</tr>';
 
   sorted.forEach(s => {
-    const nm = Number(s.net_main || 0);
-    const cls = nm >= 0 ? 'pos' : 'neg';
-    const pct = maxAbs > 0 ? Math.abs(nm) / maxAbs : 0;
-    const barDir = nm >= 0 ? 'right' : 'left';
-    html += `<tr class="sf-row" data-sector="${escHtml(s.sector_name)}">
-      <td class="sf-name">${escHtml(s.sector_name)}</td>
-      <td class="sf-num ${cls}">
-        <div class="sf-bar-wrap">
-          <div class="sf-bar sf-bar-${barDir}" style="width:${(pct*100).toFixed(0)}%"></div>
-          <span class="sf-bar-val">${fmtNum(nm)}</span>
-        </div>
-      </td>
-      <td class="sf-num">${fmtNum(s.net_super_large)}</td>
-      <td class="sf-num">${fmtNum(s.net_large)}</td>
-      <td class="sf-num">${fmtNum(s.net_medium)}</td>
-      <td class="sf-num">${fmtNum(s.net_small)}</td>
-    </tr>`;
+    html += `<tr class="sf-row" data-sector="${escHtml(s.sector_name)}"><td class="sf-name">${escHtml(s.sector_name)}</td>`;
+    periodKeys.forEach(p => {
+      const nm = Number(s[p] || 0);
+      const cls = nm >= 0 ? 'pos' : 'neg';
+      const pct = maxAbs > 0 ? Math.abs(nm) / maxAbs : 0;
+      const barDir = nm >= 0 ? 'right' : 'left';
+      html += `<td class="sf-num ${cls}"><div class="sf-bar-wrap"><div class="sf-bar sf-bar-${barDir}" style="width:${(pct*100).toFixed(0)}%"></div><span class="sf-bar-val">${fmtNum(nm)}</span></div></td>`;
+    });
+    html += '</tr>';
   });
   html += '</table>';
   wrap.innerHTML = html;
 
-  document.querySelectorAll('.sf-th').forEach(th => {
+  // Sortable period headers
+  wrap.querySelectorAll('.sf-th[data-period]').forEach(th => {
     th.addEventListener('click', () => {
-      const key = th.dataset.key;
-      if(key === _sfSortCol) _sfSortDir = _sfSortDir === 'desc' ? 'asc' : 'desc';
-      else { _sfSortCol = key; _sfSortDir = 'desc'; }
+      const p = th.dataset.period;
+      if(p === _sfSortPeriod) _sfSortDir = _sfSortDir === 'desc' ? 'asc' : 'desc';
+      else { _sfSortPeriod = p; _sfSortDir = 'desc'; }
       _sfRender();
     });
   });
-  document.querySelectorAll('.sf-row').forEach(row => {
+  wrap.querySelectorAll('.sf-row').forEach(row => {
     row.addEventListener('click', () => {
       const sector = row.dataset.sector;
       applySectorFilter(sector);
@@ -1153,15 +1144,9 @@ function _sfRender(){
   });
 }
 
-document.getElementById('sfTabs').addEventListener('click', (e) => {
-  const tab = e.target.closest('.sf-tab');
-  if(!tab) return;
-  document.querySelectorAll('.sf-tab').forEach(t => t.classList.remove('active'));
-  tab.classList.add('active');
-  _sfSortCol = 'net_main';
-  _sfSortDir = 'desc';
-  _sfLoad(tab.dataset.period);
-});
+// Remove old tab listener
+const sfTabs = document.getElementById('sfTabs');
+if(sfTabs) sfTabs.remove();
 
 function escHtml(s){
   if(!s) return '';
