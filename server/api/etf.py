@@ -40,8 +40,11 @@ def get_kline():
 def get_sector_flow():
     period = request.args.get('period', '1d')
     try:
-        data = query_latest_sector_flow(period=period)
-        return jsonify(data)
+        result = query_latest_sector_flow(period=period)
+        data = result.get('data', [])
+        actual_days = result.get('actual_days', 0)
+        resp = jsonify({'data': data, 'actual_days': actual_days, 'period': period})
+        return resp
     except Exception as e:
         return jsonify({'error': safe_error(e)}), 500
 

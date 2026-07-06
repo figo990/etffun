@@ -2422,15 +2422,23 @@ def upsert_sector_fund_flow(records, period='1d'):
 def query_latest_sector_flow(period='1d'):
     try:
         if period == '1d':
-            return _to_records(query("""
+            rows = _to_records(query("""
                 SELECT sector_name, net_main, net_super_large, net_large, net_medium, net_small
                 FROM sector_fund_flow
                 WHERE period = '1d' AND date = (SELECT MAX(date) FROM sector_fund_flow WHERE period = '1d')
                 ORDER BY net_main DESC
             """))
-        # Aggregation from daily data
+            return {'data': rows, 'actual_days': 1 if rows else 0}
         ndays = {'3d': 3, '5d': 5, '10d': 10, '20d': 20}.get(period, 3)
-        return _to_records(query(f"""
+        actual = query_one(f"""
+            SELECT COUNT(DISTINCT date) AS cnt FROM sector_fund_flow
+            WHERE period = '1d' AND date IN (
+                SELECT DISTINCT date FROM sector_fund_flow
+                WHERE period = '1d' ORDER BY date DESC LIMIT {ndays}
+            )
+        """)
+        actual_days = actual['cnt'] if actual else 0
+        rows = _to_records(query(f"""
             WITH recent AS (
                 SELECT DISTINCT date FROM sector_fund_flow
                 WHERE period = '1d' ORDER BY date DESC LIMIT {ndays}
@@ -2447,8 +2455,9 @@ def query_latest_sector_flow(period='1d'):
             GROUP BY sector_name
             ORDER BY net_main DESC
         """))
+        return {'data': rows, 'actual_days': actual_days}
     except Exception:
-        return []
+        return {'data': [], 'actual_days': 0}
 
 
 # ─── index_valuation ───────────────────────────────────────────

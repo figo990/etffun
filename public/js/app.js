@@ -1057,22 +1057,25 @@ let _sfData = [];
 let _sfPeriod = '1d';
 let _sfSortCol = 'net_main';
 let _sfSortDir = 'desc';
+let _sfActualDays = 0;
 
 async function loadSectorFlow(){
   await _sfLoad(_sfPeriod);
+  const body = document.getElementById('sectorFlowBody');
+  if(body) body.style.display = 'none';
 }
 
 async function _sfLoad(period){
   try{
     const r=await fetch('/api/etf/sector-flow?period='+period);
     const d=await r.json();
-    if(!d || !d.length) return;
-    _sfData = d;
+    const data = d.data || d;
+    if(!data || !data.length) return;
+    _sfData = data;
+    _sfActualDays = d.actual_days || 0;
     _sfPeriod = period;
     const panel = document.getElementById('sectorFlowPanel');
     panel.style.display = '';
-    const body = document.getElementById('sectorFlowBody');
-    body.style.display = 'none';
     _sfRender();
   }catch(e){}
 }
@@ -1080,6 +1083,13 @@ async function _sfLoad(period){
 function _sfRender(){
   const wrap = document.getElementById('sfTableWrap');
   if(!_sfData.length){ wrap.innerHTML='<div class="sf-empty">暂无数据</div>'; return; }
+
+  // Show actual days note for multi-period
+  const ndays = {'1d':1,'3d':3,'5d':5,'10d':10,'20d':20}[_sfPeriod] || 1;
+  let daysNote = '';
+  if(_sfActualDays > 0 && _sfActualDays < ndays){
+    daysNote = '<div class="sf-days-note">仅 ' + _sfActualDays + '/' + ndays + ' 个交易日数据（数据采集中，' + ndays + '日后完整）</div>';
+  }
 
   const maxAbs = Math.max(..._sfData.map(s => Math.abs(Number(s[_sfSortCol] || 0))), 1);
   const sorted = [..._sfData].sort((a,b) => {
@@ -1097,7 +1107,7 @@ function _sfRender(){
     {key:'net_small',   label:'小单',      align:'right'},
   ];
 
-  let html = '<table class="sf-table"><tr>';
+  let html = daysNote + '<table class="sf-table"><tr>';
   cols.forEach(c => {
     const active = c.key === _sfSortCol;
     const arrow = active ? (_sfSortDir === 'desc' ? ' ▼' : ' ▲') : '';

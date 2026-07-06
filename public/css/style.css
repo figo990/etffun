@@ -274,6 +274,7 @@ tbody tr:hover td{background:#fff6e5}
   .sf-table th{font-size:10px;padding:2px 4px}
   .sf-tab{padding:3px 10px;font-size:11px}
 }
+.sf-days-note{padding:4px 10px;font-size:11px;color:#718096;background:#fffbeb;border-bottom:1px solid #fbd38d}
 /* Huijin change colors */
 .hjw-chg{font-weight:600;font-family:Arial,Consolas,monospace}
 .hjw-chg-bad{color:#d94b45}
