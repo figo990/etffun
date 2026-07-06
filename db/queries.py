@@ -2421,6 +2421,18 @@ def upsert_sector_fund_flow(records, period='1d'):
 
 def query_latest_sector_flow(period='1d'):
     try:
+        # Try direct data first
+        if period != '1d':
+            direct = _to_records(query("""
+                SELECT sector_name, net_main, net_super_large, net_large, net_medium, net_small
+                FROM sector_fund_flow
+                WHERE period = ? AND date = (SELECT MAX(date) FROM sector_fund_flow WHERE period = ?)
+                ORDER BY net_main DESC
+            """, [period, period]))
+            if direct:
+                return {'data': direct, 'actual_days': len(direct) and 1}
+
+        # Fallback: 1d or aggregation from daily data
         if period == '1d':
             rows = _to_records(query("""
                 SELECT sector_name, net_main, net_super_large, net_large, net_medium, net_small
