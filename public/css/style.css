@@ -241,8 +241,10 @@ tbody tr:hover td{background:#fff6e5}
 .hjw-table-note{padding:4px 10px 6px;font-size:11px;color:#4a5568;line-height:18px;background:#f7fafc;border-bottom:1px solid #e2e8f0}
 .hjw-table-note b{color:#2d3748}
 .hjw-table{width:100%;border-collapse:collapse;font-size:12px}
-.hjw-table th,.hjw-table td{padding:5px 8px;border-bottom:1px solid #edf2f7;text-align:left;white-space:nowrap}
-.hjw-table th{position:sticky;top:0;background:#edf2f7;color:#4a5568;font-weight:600}
+.hjw-table th,.hjw-table td{padding:5px 8px;border-bottom:1px solid #edf2f7;text-align:left;white-space:nowrap;background:transparent}
+.hjw-table th{position:sticky;top:0;background:#edf2f7;color:#4a5568;font-weight:600;z-index:1}
+.hjw-table tbody tr:nth-child(even) td{background:transparent}
+.hjw-table tbody tr:hover td{background:#f0faf8}
 .hjw-ok{color:#2f855a;font-weight:600}
 .hjw-block{color:#c53030;font-weight:600}
 .hjw-warn{display:inline-block;margin-left:4px;padding:1px 4px;border-radius:2px;background:#fff3cd;color:#8a5a00;font-size:11px}
