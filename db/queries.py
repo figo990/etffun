@@ -3141,7 +3141,7 @@ def audit_huijin_data(include_persistent=True):
             elif configured_holding is not None and latest_total < float(configured_holding) * 1e8:
                 issues.append(_issue(
                     'CURRENT_SHARES_BELOW_CONFIG_HOLDING',
-                    'warning',
+                    'info',
                     '最新总份额低于配置中的汇金披露持有份额；这不必然是单位错误，但必须回到 S0/A 基准核验',
                     code=code,
                     date=row.get('latest_share_date'),
