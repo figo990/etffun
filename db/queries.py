@@ -1358,11 +1358,18 @@ def _latest_valid_share(code, as_of_date, exchange):
         if not is_trading_day(row['date'], exchange):
             continue
         audit = _audit_for_share(code, row['date'])
+        stale = False
+        if row['date'] != as_of:
+            try:
+                gap = (datetime.strptime(str(as_of)[:10], '%Y-%m-%d') - datetime.strptime(str(row['date'])[:10], '%Y-%m-%d')).days
+                stale = gap > 3
+            except Exception:
+                stale = True
         return {
             'date': row['date'],
             'total_shares': row.get('total_shares'),
             'audit': audit,
-            'stale': row['date'] != as_of,
+            'stale': stale,
         }
     return None
 
@@ -1472,24 +1479,15 @@ def _validate_huijin_inputs(code, baseline, share, skip_quality=False, skip_trad
         ))
 
     audit = share.get('audit')
-    if share.get('stale') and share.get('date'):
-        from datetime import datetime, date
-        try:
-            sd = share['date']
-            if hasattr(sd, 'strftime'):
-                sd = sd.strftime('%Y-%m-%d')
-            gap = (datetime.now() - datetime.strptime(str(sd)[:10], '%Y-%m-%d')).days
-        except Exception:
-            gap = 99
-        if gap > 3:
-            stale_type = 'SSE_SOURCE_STALE' if audit and str(audit.get('source_name') or '').startswith('sse') else 'STALE_SHARE_DATE'
-            warnings.append(_issue(
-                stale_type,
-                'warning',
-                '份额数据滞后于观察日期，按最近有效交易日仅作滞后观察',
-                code=code,
-                date=share.get('date'),
-            ))
+    if share.get('stale'):
+        stale_type = 'SSE_SOURCE_STALE' if audit and str(audit.get('source_name') or '').startswith('sse') else 'STALE_SHARE_DATE'
+        warnings.append(_issue(
+            stale_type,
+            'warning',
+            '份额数据滞后于观察日期，按最近有效交易日仅作滞后观察',
+            code=code,
+            date=share.get('date'),
+        ))
     if not audit:
         blockers.append(_issue(
             'MISSING_S1_AUDIT',
