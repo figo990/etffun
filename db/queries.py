@@ -1472,15 +1472,24 @@ def _validate_huijin_inputs(code, baseline, share, skip_quality=False, skip_trad
         ))
 
     audit = share.get('audit')
-    if share.get('stale'):
-        stale_type = 'SSE_SOURCE_STALE' if audit and str(audit.get('source_name') or '').startswith('sse') else 'STALE_SHARE_DATE'
-        warnings.append(_issue(
-            stale_type,
-            'warning',
-            '份额数据滞后于观察日期，按最近有效交易日仅作滞后观察',
-            code=code,
-            date=share.get('date'),
-        ))
+    if share.get('stale') and share.get('date'):
+        from datetime import datetime, date
+        try:
+            sd = share['date']
+            if hasattr(sd, 'strftime'):
+                sd = sd.strftime('%Y-%m-%d')
+            gap = (datetime.now() - datetime.strptime(str(sd)[:10], '%Y-%m-%d')).days
+        except Exception:
+            gap = 99
+        if gap > 3:
+            stale_type = 'SSE_SOURCE_STALE' if audit and str(audit.get('source_name') or '').startswith('sse') else 'STALE_SHARE_DATE'
+            warnings.append(_issue(
+                stale_type,
+                'warning',
+                '份额数据滞后于观察日期，按最近有效交易日仅作滞后观察',
+                code=code,
+                date=share.get('date'),
+            ))
     if not audit:
         blockers.append(_issue(
             'MISSING_S1_AUDIT',
@@ -1688,12 +1697,12 @@ def _audit_item_additional_issues(code, baseline, share, audit):
     if not share or not share.get('total_shares'):
         return issues
     
-    # CURRENT_SHARES_BELOW_CONFIG_HOLDING
+    # CURRENT_SHARES_BELOW_CONFIG_HOLDING (info level, expected behavior)
     if baseline and baseline.get('h0_total_shares') and share.get('total_shares'):
         h0 = float(baseline['h0_total_shares'])
         s1 = float(share['total_shares'])
         if h0 > 0 and s1 < h0 * 0.5:
-            issues.append(_issue('CURRENT_SHARES_BELOW_CONFIG_HOLDING', 'warning',
+            issues.append(_issue('CURRENT_SHARES_BELOW_CONFIG_HOLDING', 'info',
                                 f'当前份额({s1/1e8:.2f}亿)低于汇金披露持仓({h0/1e8:.2f}亿)的50%, 份额大幅缩水',
                                 code=code, date=share.get('date')))
     
@@ -2056,7 +2065,7 @@ def get_huijin_overview(as_of_date=None):
         for iss in _audit_item_additional_issues(code, baseline, share, audit) + audit_issue_map.get(str(code), []):
             if iss.get('severity') == 'blocker':
                 blockers.append(iss)
-            else:
+            elif iss.get('severity') != 'info':
                 warnings.append(iss)
         blockers = _dedupe_issues(blockers)
         warnings = _dedupe_issues(warnings)
@@ -2206,7 +2215,8 @@ def get_huijin_overview(as_of_date=None):
     for i in items:
         for issue in (i.get('blockers') or []) + (i.get('warnings') or []):
             key = issue.get('issue_type') or 'UNKNOWN'
-            quality_issue_counts[key] = quality_issue_counts.get(key, 0) + 1
+            if issue.get('severity') != 'info':
+                quality_issue_counts[key] = quality_issue_counts.get(key, 0) + 1
     source_level_counts = {}
     display_rule_counts = {}
     quality_filter_counts = {}
