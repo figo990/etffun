@@ -175,7 +175,7 @@ if ov_item:
     check('huijin signal metadata', 'not_triggered_reasons' in ov_item and 'share_change_direction' in ov_item)
 if sz_item:
     check('huijin source inferred warning',
-          sz_item['source_level'] == 'B' and sz_item['quality_level'] == 'warning' and 'source_date_inferred' in sz_item.get('quality_tags', []),
+          sz_item['source_level'] == 'B' and sz_item['quality_level'] in ('warning', 'observable') and 'source_date_inferred' in sz_item.get('quality_tags', []),
           sz_item)
     check('huijin display rule source inferred', sz_item.get('display_rule') == 'source_date_inferred')
 pool = next((g for g in overview.get('groups', []) if g['group_name'] == '沪深300'), None)

@@ -1517,7 +1517,7 @@ def _validate_huijin_inputs(code, baseline, share, skip_quality=False, skip_trad
         if audit.get('source_date_inferred') or 'SOURCE_DATE_INFERRED' in flags:
             warnings.append(_issue(
                 'SOURCE_DATE_INFERRED',
-                'warning',
+                'info',
                 '份额源日期由交易日历推断',
                 code=code,
                 date=share.get('date'),
