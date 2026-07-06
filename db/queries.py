@@ -1517,7 +1517,9 @@ def _detect_ten_x_signal(code, as_of_date, lookback=30, baseline_window=20, thre
             'consecutive_days': len(flagged),
             'baseline_volume': round(baseline, 2),
             'threshold': threshold,
+            'threshold_consecutive': consecutive,
             'current_ratio': round(flagged[-1][1], 1) if flagged else None,
+            'trigger_reason': f"连续{len(flagged)}/{consecutive}天超过{threshold}倍基准量" if len(flagged) < consecutive else f"连续{len(flagged)}天超过{threshold}倍基准量，已触发",
         }
     except Exception:
         return None
@@ -1532,6 +1534,89 @@ def _pool_change_ratio(group_items, change_key, total_shares):
     )
     if total_shares and total_change != 0:
         return round(total_change * 10000 / total_shares, 4)  # 万份→百分比
+
+
+def _compute_source_level(share, audit):
+    """A=交易所直采明确日期, B=交易所直采推断, C=legacy回填, D=异常阻断"""
+    if not share or not audit:
+        return 'D'
+    src = audit.get('source_name', '')
+    inferred = audit.get('source_date_inferred', False)
+    is_legacy = 'legacy' in src
+    if is_legacy:
+        return 'C' if not inferred else 'D'
+    return 'A' if not inferred else 'B'
+
+
+def _compute_quality_level(blockers, warnings, baseline, share, audit):
+    """quality_level: verified_observable, formula_preview, blocked, data_blocked"""
+    if blockers or not share:
+        return 'data_blocked'
+    if baseline and baseline.get('verification_status') == 'verified' and baseline.get('source_doc_url'):
+        return 'verified_observable'
+    if baseline:
+        return 'formula_preview'
+    return 'blocked'
+
+
+def _compute_observation_level(changes, interval, ten_x_signal):
+    """observation: strong, enhanced, weakened, none"""
+    if ten_x_signal and ten_x_signal.get('active'):
+        return 'strong'
+    chg5d = changes.get('share_change_ratio_5d')
+    chg20d = changes.get('share_change_ratio_20d')
+    chg60d = changes.get('share_change_ratio_60d')
+    if chg5d is not None and chg5d > 3 and chg20d is not None and chg20d > 5:
+        return 'enhanced'
+    if chg5d is not None and chg5d < -3 and chg20d is not None and chg20d < -5:
+        return 'weakened'
+    return 'none'
+
+
+def _compute_quality_tags(baseline, share, audit, warnings):
+    tags = []
+    if not baseline or baseline.get('verification_status') != 'verified':
+        tags.append('baseline_unverified')
+    elif baseline.get('source_doc_url'):
+        tags.append('baseline_verified')
+    if not baseline or not baseline.get('source_doc_url'):
+        tags.append('doc_url_missing')
+    if audit:
+        src = audit.get('source_name', '')
+        if 'sse' in src or 'szse' in src:
+            tags.append('exchange_source')
+        elif 'legacy' in src:
+            tags.append('legacy_source')
+        if audit.get('source_date_inferred'):
+            tags.append('source_date_inferred')
+        flags = _flag_set(audit.get('quality_flags'))
+        if 'SHARE_GAP' in flags:
+            tags.append('share_gap')
+        if 'ABNORMAL_JUMP' in flags:
+            tags.append('abnormal_jump')
+    for w in (warnings or []):
+        if w.get('issue_type') == 'SOURCE_DATE_INFERRED':
+            tags.append('source_date_inferred')
+        if w.get('issue_type') in ('SHARE_GAP', 'ABNORMAL_JUMP'):
+            tags.append(w.get('issue_type').lower())
+    return tags
+
+
+def _compute_signal_reasons(changes, interval, ten_x_signal):
+    reasons = []
+    if ten_x_signal:
+        cur = ten_x_signal.get('current_ratio')
+        days = ten_x_signal.get('consecutive_days', 0)
+        need = ten_x_signal.get('threshold_consecutive', 7)
+        if cur is not None:
+            reasons.append(f"10x倍率={cur:.1f}x")
+        reasons.append(f"连续{days}天")
+        reasons.append(f"需要{need}天")
+        if ten_x_signal.get('active'):
+            reasons.append("已触发")
+        else:
+            reasons.append(f"还需{need - days}天触发")
+    return reasons
 
 
 def get_huijin_overview(as_of_date=None):
@@ -1591,6 +1676,12 @@ def get_huijin_overview(as_of_date=None):
             'interval': interval,
             'interval_note': '相对披露日总份额归一化口径，不代表实时汇金真实持仓' if interval else None,
             'ten_x_signal': _detect_ten_x_signal(code, as_of),
+            # Computed metadata
+            'source_level': _compute_source_level(share, audit),
+            'quality_level': _compute_quality_level(blockers, warnings, baseline, share, audit),
+            'observation_level': _compute_observation_level(changes, interval, _detect_ten_x_signal(code, as_of)),
+            'quality_tags': _compute_quality_tags(baseline, share, audit, warnings),
+            'signal_reasons': _compute_signal_reasons(changes, interval, _detect_ten_x_signal(code, as_of)),
         })
 
     groups = []
@@ -1622,6 +1713,9 @@ def get_huijin_overview(as_of_date=None):
     ok_count = sum(1 for i in items if i['status'] == 'ok')
     blocked_count = len(items) - ok_count
     warning_count = sum(1 for i in items if i.get('warnings'))
+    formula_preview_count = sum(1 for i in items if i.get('quality_level') == 'formula_preview')
+    verified_observable_count = sum(1 for i in items if i.get('quality_level') == 'verified_observable')
+    data_blocked_count = sum(1 for i in items if i.get('quality_level') == 'data_blocked')
     share_dates = [i['latest_share']['date'] for i in items if i['latest_share'] and i['latest_share'].get('date')]
     latest_share_date = max(share_dates) if share_dates else None
 
@@ -1636,6 +1730,9 @@ def get_huijin_overview(as_of_date=None):
         'ok_count': ok_count,
         'blocked_count': blocked_count,
         'warning_count': warning_count,
+        'formula_preview_count': formula_preview_count,
+        'verified_observable_count': verified_observable_count,
+        'data_blocked_count': data_blocked_count,
         'ten_x_active_count': ten_x_active_count,
         'ten_x_active_codes': ten_x_active_codes,
         'items': items,
