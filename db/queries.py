@@ -1549,23 +1549,52 @@ def _compute_source_level(share, audit):
 
 
 def _compute_quality_level(blockers, warnings, baseline, share, audit):
-    """quality_level: verified_observable, formula_preview, blocked, data_blocked"""
-    if blockers or not share:
-        return 'data_blocked'
-    if baseline and baseline.get('verification_status') == 'verified' and baseline.get('source_doc_url'):
-        return 'verified_observable'
-    if baseline:
-        return 'formula_preview'
-    return 'blocked'
+    """Split into baseline_quality, share_quality, overall_quality"""
+    # Baseline quality
+    if baseline and baseline.get('verification_status') == 'verified':
+        if baseline.get('source_doc_url') and baseline.get('source_doc_hash'):
+            baseline_quality = 'verified'
+        else:
+            baseline_quality = 'verified_minimal'
+    elif baseline:
+        baseline_quality = 'draft'
+    else:
+        baseline_quality = 'missing'
+
+    # Share quality
+    share_quality = 'missing'
+    if audit:
+        src = audit.get('source_name', '')
+        if 'legacy' in src:
+            share_quality = 'legacy_inferred' if audit.get('source_date_inferred') else 'legacy'
+        elif 'sse' in src or 'szse' in src:
+            share_quality = 'exchange_inferred' if audit.get('source_date_inferred') else 'exchange_direct'
+
+    # Overall quality
+    if blockers:
+        overall_quality = 'data_blocked'
+    elif baseline_quality in ('verified', 'verified_minimal') and share_quality in ('exchange_direct', 'exchange_inferred'):
+        overall_quality = 'observable'
+    elif baseline_quality in ('verified', 'verified_minimal'):
+        overall_quality = 'preview'
+    else:
+        overall_quality = 'blocked'
+
+    return {
+        'baseline_quality': baseline_quality,
+        'share_quality': share_quality,
+        'overall_quality': overall_quality,
+    }
 
 
-def _compute_observation_level(changes, interval, ten_x_signal):
-    """observation: strong, enhanced, weakened, none"""
+def _compute_observation_level(changes, interval, ten_x_signal, blocked=False):
+    """observation: strong, enhanced, weakened, none, or blocked"""
+    if blocked:
+        return 'blocked'
     if ten_x_signal and ten_x_signal.get('active'):
         return 'strong'
     chg5d = changes.get('share_change_ratio_5d')
     chg20d = changes.get('share_change_ratio_20d')
-    chg60d = changes.get('share_change_ratio_60d')
     if chg5d is not None and chg5d > 3 and chg20d is not None and chg20d > 5:
         return 'enhanced'
     if chg5d is not None and chg5d < -3 and chg20d is not None and chg20d < -5:
@@ -1678,8 +1707,8 @@ def get_huijin_overview(as_of_date=None):
             'ten_x_signal': _detect_ten_x_signal(code, as_of),
             # Computed metadata
             'source_level': _compute_source_level(share, audit),
-            'quality_level': _compute_quality_level(blockers, warnings, baseline, share, audit),
-            'observation_level': _compute_observation_level(changes, interval, _detect_ten_x_signal(code, as_of)),
+            'quality_levels': _compute_quality_level(blockers, warnings, baseline, share, audit),
+            'observation_level': _compute_observation_level(changes, interval, _detect_ten_x_signal(code, as_of), blocked=bool(blockers)),
             'quality_tags': _compute_quality_tags(baseline, share, audit, warnings),
             'signal_reasons': _compute_signal_reasons(changes, interval, _detect_ten_x_signal(code, as_of)),
         })
@@ -1713,9 +1742,9 @@ def get_huijin_overview(as_of_date=None):
     ok_count = sum(1 for i in items if i['status'] == 'ok')
     blocked_count = len(items) - ok_count
     warning_count = sum(1 for i in items if i.get('warnings'))
-    formula_preview_count = sum(1 for i in items if i.get('quality_level') == 'formula_preview')
-    verified_observable_count = sum(1 for i in items if i.get('quality_level') == 'verified_observable')
-    data_blocked_count = sum(1 for i in items if i.get('quality_level') == 'data_blocked')
+    formula_preview_count = sum(1 for i in items if i.get('quality_levels', {}).get('overall_quality') == 'preview')
+    verified_observable_count = sum(1 for i in items if i.get('quality_levels', {}).get('overall_quality') == 'observable')
+    data_blocked_count = sum(1 for i in items if i.get('quality_levels', {}).get('overall_quality') == 'data_blocked')
     share_dates = [i['latest_share']['date'] for i in items if i['latest_share'] and i['latest_share'].get('date')]
     latest_share_date = max(share_dates) if share_dates else None
 

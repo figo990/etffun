@@ -954,9 +954,9 @@ function renderHuijinWatch(){
   const tenXCodes = huijinOverview.ten_x_active_codes || [];
   const hasDocUrl = (f) => f.baseline && f.baseline.source_doc_url ? 1 : 0;
   const hasDocHash = (f) => f.baseline && f.baseline.source_doc_hash ? 1 : 0;
-  const verifiedDoc = items.filter(i => i.quality_level === 'verified_observable').length;
-  const formulaPrev = items.filter(i => i.quality_level === 'formula_preview').length;
-  const dataBlocked = items.filter(i => i.quality_level === 'data_blocked').length;
+  const verifiedDoc = items.filter(i => i.quality_levels && i.quality_levels.overall_quality === 'observable').length;
+  const formulaPrev = items.filter(i => i.quality_levels && i.quality_levels.overall_quality === 'preview').length;
+  const dataBlocked = items.filter(i => i.quality_levels && i.quality_levels.overall_quality === 'data_blocked').length;
   const exchangeSrc = items.filter(i => i.source_level && i.source_level <= 'B').length;
   const inferred = items.filter(i => i.quality_tags && i.quality_tags.includes('source_date_inferred')).length;
   const stale = items.filter(i => i.latest_share && i.latest_share.stale).length;
@@ -988,7 +988,9 @@ function renderHuijinWatch(){
     const inferredMark = share.source_date_inferred ? '<span class="hjw-warn">推断</span>' : '';
     const tenXSignal = item.ten_x_signal && item.ten_x_signal.active;
     // Use API-computed fields
-    const ql = item.quality_level || 'blocked';
+    const ql = (item.quality_levels && item.quality_levels.overall_quality) || 'blocked';
+    const bq = (item.quality_levels && item.quality_levels.baseline_quality) || 'missing';
+    const sq = (item.quality_levels && item.quality_levels.share_quality) || 'missing';
     const sl = item.source_level || 'D';
     const ol = item.observation_level || 'none';
     const tags = item.quality_tags || [];
@@ -998,9 +1000,9 @@ function renderHuijinWatch(){
     let statusHtml;
     if(ql === 'data_blocked'){
       statusHtml = '<span class="hjw-block">数据阻断</span>';
-    } else if(ql === 'verified_observable'){
+    } else if(ql === 'observable'){
       statusHtml = '<span class="hjw-ok">已核验可观察</span>';
-    } else if(ql === 'formula_preview'){
+    } else if(ql === 'preview'){
       statusHtml = '<span class="hjw-ok">公式可预览</span>';
     } else {
       statusHtml = '<span class="hjw-block">待核验</span>';
