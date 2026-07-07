@@ -243,6 +243,9 @@ tbody tr:hover td{background:#fff6e5}
 .hjw-table{width:100%;border-collapse:collapse;font-size:12px}
 .hjw-table th,.hjw-table td{padding:5px 8px;border-bottom:1px solid #edf2f7;text-align:left;white-space:nowrap;background:transparent}
 .hjw-table th{position:sticky;top:0;background:#edf2f7;color:#4a5568;font-weight:600;z-index:1}
+.hjw-table td:nth-child(2){max-width:160px;overflow:hidden;text-overflow:ellipsis}
+.hjw-table td:nth-child(3){max-width:200px;overflow:hidden;text-overflow:ellipsis}
+.hjw-table td:nth-child(4){max-width:160px;overflow:hidden;text-overflow:ellipsis}
 .hjw-table tbody tr:nth-child(even) td{background:transparent}
 .hjw-table tbody tr:hover td{background:#f0faf8}
 .hjw-ok{color:#2f855a;font-weight:600}
