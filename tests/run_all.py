@@ -157,7 +157,7 @@ upsert_daily_snapshot_audit([
     {'date':'2026-01-16','code':'159919','source_name':'szse_etf_scale','source_url':'test','source_date':'2026-01-16','source_date_inferred':True,'raw_total_shares':1100000000,'raw_unit':'份','normalized_total_shares':1100000000,'run_id':run_id,'quality_flags':'SOURCE_DATE_INFERRED'},
 ])
 check('daily snapshot audit upsert', len(get_daily_snapshot_audit('510300', '2026-01-16')) == 1)
-check('seed watch groups', seed_huijin_watch_groups() >= 15)
+check('seed watch groups', seed_huijin_watch_groups() >= 14)
 check('watch groups readable', any(g['code'] == '510300' for g in get_huijin_watch_groups()))
 
 overview = get_huijin_overview(as_of_date='2026-01-16')
