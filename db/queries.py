@@ -1979,7 +1979,7 @@ def _compute_quality_tags(baseline, share, audit, warnings, blockers=None, sourc
             tags.append('stale_share')
         if w.get('issue_type') == 'SSE_SOURCE_STALE':
             tags.extend(['stale_share', 'sse_source_lag'])
-        if w.get('issue_type') in ('SHARE_GAP', 'ABNORMAL_JUMP', 'MISSING_H0', 'MISSING_VERIFIED_BASELINE'):
+        if w.get('issue_type') in ('MISSING_H0', 'MISSING_VERIFIED_BASELINE'):
             tags.append(w.get('issue_type').lower())
     return _dedupe_strings(tags)
 
