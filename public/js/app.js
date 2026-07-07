@@ -1120,15 +1120,15 @@ function renderHuijinWatch(){
   const srt = (key) => _hjwSortKey === key ? (_hjwSortAsc ? ' ▲' : ' ▼') : '';
   html += '<div class="hjw-table-wrap"><table class="hjw-table"><thead><tr>'
     + '<th class="hjw-srt" data-sort="code">代码/名称' + srt('code') + '</th>'
-    + '<th class="hjw-srt" data-sort="quality_level">状态/质量' + srt('quality_level') + '</th>'
-    + '<th>观察/未触发原因</th>'
-    + '<th>区间/原因</th>'
-    + '<th class="hjw-srt" data-sort="vs_baseline_pct">变动强度' + srt('vs_baseline_pct') + '</th>'
+    + '<th class="hjw-srt" data-sort="can_calculate_interval" title="Y_min~Y_max归一化区间，Y_max=B=S1/S0，Y_min=max(0,B-(1-A))">区间/原因' + srt('can_calculate_interval') + '</th>'
+    + '<th class="hjw-srt" data-sort="vs_baseline_pct" title="当前份额相对披露日S0的增减比例">变动强度' + srt('vs_baseline_pct') + '</th>'
     + '<th class="hjw-srt" data-sort="share_change_ratio_5d">5日%' + srt('share_change_ratio_5d') + '</th>'
     + '<th class="hjw-srt" data-sort="share_change_ratio_10d">10日%' + srt('share_change_ratio_10d') + '</th>'
     + '<th class="hjw-srt" data-sort="share_change_ratio_20d">20日%' + srt('share_change_ratio_20d') + '</th>'
     + '<th class="hjw-srt" data-sort="share_change_ratio_60d">60日%' + srt('share_change_ratio_60d') + '</th>'
     + '<th>观察组</th><th>报告期</th><th>披露日</th><th>份额日</th>'
+    + '<th title="基于基准质量、份额质量和预警的综合评级">状态/质量</th>'
+    + '<th title="当前观察等级及未触发增强/减弱观察的具体原因">观察/未触发原因</th>'
     + '</tr></thead><tbody>';
   const okItems = items.filter(i => i.can_calculate_interval);
   rows.forEach(item => {
@@ -1182,10 +1182,8 @@ const tagEls = tags.map(t => {
     const obsDetail = sigReason ? sigReason : notReason;
     html += `<tr>
       <td><span class="code clickable" data-code="${esc(item.code)}" data-name="${esc(item.name || '')}">${esc(item.code)}</span> ${obsHtml}<br><span class="hjw-name">${esc(item.name || '')}</span></td>
-      <td>${statusHtml}<br><span class="hjw-row-tags">${tagShort}</span></td>
-      <td class="hjw-result" title="${esc(obsTitle)}">${obsDetail ? esc(obsDetail) : _na()}</td>
       <td class="hjw-result" title="${esc(result)}">${result || _na()}</td>
-      <td class="hjw-num">${item.vs_baseline_pct != null ? chg(item.vs_baseline_pct) : _na()}</td>
+      <td class="hjw-num" title="相对披露日S0的变化率">${item.vs_baseline_pct != null ? chg(item.vs_baseline_pct) : _na()}</td>
       <td class="hjw-num">${chg(item.share_change_ratio_5d)}</td>
       <td class="hjw-num">${chg(item.share_change_ratio_10d)}</td>
       <td class="hjw-num">${chg(item.share_change_ratio_20d)}</td>
@@ -1193,7 +1191,9 @@ const tagEls = tags.map(t => {
       <td>${groups ? esc(groups) : _na()}</td>
       <td>${base.report_period ? esc(base.report_period) : _na()}</td>
       <td>${base.disclosure_date ? esc(base.disclosure_date) : _na()}</td>
-      <td>${share.date ? esc(share.date) : _na()} ${inferredMark} ${sourceInfo}</td>
+      <td>${share.date ? esc(share.date) : _na()} ${inferredMark}</td>
+      <td>${statusHtml}<br><span class="hjw-row-tags">${tagShort}</span></td>
+      <td class="hjw-result" title="${esc(obsTitle)}">${obsDetail ? esc(obsDetail) : _na()}</td>
     </tr>`;
   });
   // Summary row
