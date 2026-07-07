@@ -1923,8 +1923,9 @@ def _compute_huijin_signal(changes, interval, ten_x_signal, blockers=None, warni
 
     if ten_x_signal:
         not_triggered.extend(ten_x_signal.get('not_triggered_reasons') or [])
-    if warnings:
-        reasons.append('存在质量警告，仅作观察')
+    real_warnings = [w for w in (warnings or []) if w.get('severity') != 'info']
+    if real_warnings:
+        reasons.append('质量警告，仅作观察')
 
     return {
         'effective': False,
