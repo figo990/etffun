@@ -249,6 +249,8 @@ tbody tr:hover td{background:#fff6e5}
 .hjw-table td:nth-child(4){max-width:140px;overflow:hidden;text-overflow:ellipsis}
 .hjw-table tbody tr:nth-child(even) td{background:transparent}
 .hjw-table tbody tr:hover td{background:#f0faf8}
+.hjw-srt{cursor:pointer;user-select:none}
+.hjw-srt:hover{background:#d5dde5}
 .hjw-ok{color:#2f855a;font-weight:600}
 .hjw-block{color:#c53030;font-weight:600}
 .hjw-warn{display:inline-block;margin-left:4px;padding:1px 4px;border-radius:2px;background:#fff3cd;color:#8a5a00;font-size:11px}
