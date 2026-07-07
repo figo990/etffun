@@ -2015,9 +2015,9 @@ def _quality_display_state(source_level, blockers, warnings, share, audit):
         }
     if audit and audit.get('source_date_inferred'):
         return {
-            'label': '源日期推断',
+            'label': '可观察',
             'rule': 'source_date_inferred',
-            'note': '深市份额源日期由交易日历推断，信息性标记，不影响计算',
+            'note': '深市份额源日期由交易日历推断，标签已标记',
         }
     if share and share.get('stale'):
         return {
