@@ -185,7 +185,7 @@ check('huijin overview issue counts', isinstance(overview.get('quality_issue_cou
 check('huijin overview quality summary',
       overview.get('quality_summary', {}).get('formula_calculable_count', 0) >= 1
       and 'source_level_counts' in overview.get('quality_summary', {}))
-stale_overview = get_huijin_overview(as_of_date='2026-01-21')
+stale_overview = get_huijin_overview(as_of_date='2026-01-23')
 stale_item = next((i for i in stale_overview['items'] if i['code'] == '510300'), None)
 check('huijin stale S1 marked', stale_item and stale_item['latest_share']['stale'] is True)
 check('huijin stale display rule', stale_item and stale_item.get('display_rule') == 'sse_stale')

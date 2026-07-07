@@ -1362,7 +1362,7 @@ def _latest_valid_share(code, as_of_date, exchange):
         if row['date'] != as_of:
             try:
                 gap = (datetime.strptime(str(as_of)[:10], '%Y-%m-%d') - datetime.strptime(str(row['date'])[:10], '%Y-%m-%d')).days
-                stale = gap > 3
+                stale = gap > 5
             except Exception:
                 stale = True
         return {
