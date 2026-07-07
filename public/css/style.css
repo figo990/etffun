@@ -235,6 +235,7 @@ tbody tr:hover td{background:#fff6e5}
 .hjw-summary b{font-weight:700;color:#1a202c}
 .hjw-subhead{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:#718096;padding:0 10px 6px;border-bottom:1px solid #e2e8f0}
 .hjw-subhead b{font-weight:600;color:#4a5568}
+.hjw-subnote{padding:0 10px 6px;font-size:11px;color:#718096;line-height:16px;margin-top:-4px}
 .hjw-table-wrap{overflow:visible;border-top:1px solid #e2e8f0}
 .hjw-table-note{padding:4px 10px 6px;font-size:11px;color:#4a5568;line-height:18px;background:#f7fafc;border-bottom:1px solid #e2e8f0}
 .hjw-table-note b{color:#2d3748}

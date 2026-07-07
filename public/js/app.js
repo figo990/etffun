@@ -849,7 +849,7 @@ async function loadHuijinBacktest(){
 
 async function loadCffexPositionRank(){
   try{
-    const r = await fetch('/api/huijin/cffex-position-rank?limit=50');
+    const r = await fetch('/api/huijin/cffex-position-rank?limit=1000');
     const d = await r.json();
     if(Array.isArray(d)){
       cffexPositionRank = d;
@@ -1101,7 +1101,8 @@ function renderHuijinWatch(){
   let html = '<div class="hjw-head">';
   html += '<div class="hjw-title">汇金 ETF 份额观察</div>';
   html += `<div class="hjw-summary"><span>区间可算 <b>${formulaCalc}</b></span><span>质量警告 <b>${warningDoc}</b></span><span>数据阻断 <b>${dataBlocked}</b></span><span>推断源日期 <b>${inferred}</b></span>${tenX ? `<span class="hjw-signal">10x份额扩张 <b>${tenX}</b></span>` : ''}</div>`;
-  html += '<div class="hjw-subhead"><span>系统数据截至 <b>' + esc(as_of) + '</b></span><span>有效份额日 <b>' + esc(latest_share_date) + '</b></span></div>';
+  html += '<div class="hjw-subhead"><span>系统数据截至 <b>' + esc(as_of) + '</b></span><span>有效份额日 <b>' + esc(latest_share_date) + '</b></span><span>观察池 <b>14</b> 只</span></div>';
+  html += '<div class="hjw-subnote">观察池基于基金年报汇金持仓数据。已排除: 588000(华夏科创50ETF)—2025年报前十名持有人未见中央汇金。</div>';
   html += '</div>';
 
   // ─── Quality summary bar ───
@@ -1190,7 +1191,8 @@ const tagEls = tags.map(t => {
       <td>${groups ? esc(groups) : _na()}</td>
       <td>${base.report_period ? esc(base.report_period) : _na()}</td>
       <td>${base.disclosure_date ? esc(base.disclosure_date) : _na()}</td>
-      <td>${share.date ? esc(share.date) : _na()} ${inferredMark}</td>
+      <td>${share.date ? esc(share.date) : _na()} ${inferredMark}
+      ${share.stale ? `<span class="hjw-warn">滞后${Math.round((new Date(as_of.replace(/-/g,'/')) - new Date(share.date.replace(/-/g,'/')))/86400000)}天</span>` : ''}</td>
       <td>${statusHtml}<br><span class="hjw-row-tags">${tagShort}</span></td>
       <td class="hjw-result" title="${esc(obsTitle)}">${obsDetail ? esc(obsDetail) : _na()}</td>
     </tr>`;
@@ -1285,11 +1287,11 @@ const tagEls = tags.map(t => {
   html += '<div class="hjt-title"><span class="hjt-dot ok"></span>期指辅助<span class="hjt-note">中金所排名，不进入核心公式，仅辅助验证</span></div>';
   const cffexMeta = huijinOverview.cffex_meta || {};
   if(cffexPositionRank.length){
-    const rankRows = cffexPositionRank.slice(0, 20);
+    const rankRows = cffexPositionRank.slice(0, 40);
     const metaLine = cffexMeta.available
-      ? `日期 <b>${esc(cffexMeta.latest_date || '')}</b>，合约覆盖 <b>${esc(cffexMeta.contract_count || 0)}</b> 个${cffexMeta.stale ? '，<span class="hjw-warn">滞后</span>' : '，<span class="hjw-ok">当前</span>'}`
+      ? `日期 <b>${esc(cffexMeta.latest_date || '')}</b>，合约覆盖 <b>${esc(cffexMeta.contract_count || 0)}</b> 个${cffexMeta.stale ? '，<span class="hjw-warn">滞后</span>' : '，<span class="hjw-ok">当日</span>'}`
       : '<span class="hjw-warn">暂无期指辅助数据</span>';
-    html += '<div class="hjw-table-note"><b>说明</b>：中金所股指期货成交持仓排名，仅作辅助验证，不进入核心公式。' + metaLine + '。ETF份额与期指持仓只能交叉观察，不能机械等同于具体主体操作。</div>';
+    html += '<div class="hjw-table-note"><b>说明</b>：中金所股指期货成交持仓排名，仅作辅助验证，不进入核心公式。' + metaLine + '。IF=沪深300，IH=上证50，IC=中证500，IM=中证1000。</div>';
     html += '<div class="hjw-table-wrap"><table class="hjw-table hjw-cffex-table"><thead><tr><th>合约</th><th>类型</th><th>排名</th><th>会员</th><th>数量</th><th>变化</th></tr></thead><tbody>';
     rankRows.forEach(r => {
       html += `<tr>
