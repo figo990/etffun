@@ -1174,7 +1174,6 @@ const tagEls = tags.map(t => {
       result = `${fmtRatio(item.interval.y_min)} ~ ${fmtRatio(item.interval.y_max)}`;
     }
     const chg = (v) => v != null && !isNaN(v) ? '<span class="hjw-chg' + (v < -10 ? ' hjw-chg-bad' : v > 2 ? ' hjw-chg-good' : '') + '">' + Number(v).toFixed(1) + '%</span>' : _na();
-    const sourceInfo = '';
     const sig = item.signal || {};
     const notReason = (item.not_triggered_reasons || sig.not_triggered_reasons || []).slice(0, 2).join('；');
     const sigReason = (item.signal_reasons || sig.reasons || []).slice(0, 2).join('；');
