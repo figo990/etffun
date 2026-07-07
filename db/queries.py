@@ -1417,19 +1417,29 @@ def _share_changes(code, share_date, baseline=None):
         return result
 
     offsets = [('1d', 1), ('5d', 5), ('10d', 10), ('20d', 20), ('60d', 60)]
+    # Get actual share data dates for this code (use as fallback for comparison)
+    share_rows = _to_records(query("""
+        SELECT date, total_shares FROM daily_snapshot
+        WHERE code = ? AND total_shares IS NOT NULL AND date < ?
+        ORDER BY date DESC LIMIT 60
+    """, [str(code), _nullable_norm_date(share_date)]))
     for label, offset in offsets:
+        prev_shares = None
         if len(past_dates) >= offset:
             prev_date = past_dates[offset - 1]
             prev_row = query_one("""
                 SELECT total_shares FROM daily_snapshot
-                WHERE code=? AND total_shares IS NOT NULL AND date <= ? AND date >= ?::DATE - INTERVAL '10 days'
+                WHERE code=? AND total_shares IS NOT NULL AND date <= ? AND date >= ?::DATE - INTERVAL '30 days'
                 ORDER BY date DESC LIMIT 1
             """, [str(code), _nullable_norm_date(prev_date), _nullable_norm_date(prev_date)])
             prev_shares = prev_row['total_shares'] if prev_row else None
-            if prev_shares and prev_shares > 0:
-                delta = cur_shares - prev_shares
-                result[f'share_change_{label}'] = round(delta / 1e4, 2)
-                result[f'share_change_ratio_{label}'] = round(delta / prev_shares * 100, 4)
+        # Fallback: use actual share data rows
+        if prev_shares is None and len(share_rows) >= offset:
+            prev_shares = share_rows[offset - 1].get('total_shares')
+        if prev_shares and prev_shares > 0:
+            delta = cur_shares - prev_shares
+            result[f'share_change_{label}'] = round(delta / 1e4, 2)
+            result[f'share_change_ratio_{label}'] = round(delta / prev_shares * 100, 4)
 
     # Vs baseline (S0)
     if baseline and baseline.get('s0_total_shares'):
