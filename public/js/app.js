@@ -1111,9 +1111,29 @@ function renderHuijinWatch(){
     else if(ol === 'blocked') obsHtml = '<span class="hjw-block">数据阻断</span>';
     else obsHtml = '<span class="hjw-tag">观望</span>';
     // Quality tags display
-    const tagHtml = tags.map(t => {
+    const TAG_LABELS = {
+    baseline_verified: '基准已核验',
+    baseline_unverified: '基准未核验',
+    source_level_a: '源A级',
+    source_level_b: '源B级',
+    source_level_c: '源C级',
+    source_level_d: '源D级',
+    exchange_source: '交易所源',
+    source_date_inferred: '源日期推断',
+    doc_url_missing: '缺公告链接',
+    missing_h0: '缺H0',
+    missing_verified_baseline: '缺verified基准',
+    data_blocked: '数据阻断',
+    stale_share: '份额滞后',
+    sse_source_lag: '上交所滞后',
+    legacy_source: '旧数据源',
+    share_gap: '份额断档',
+    abnormal_jump: '份额异常跳变',
+  };
+  const tagHtml = tags.map(t => {
       const cls = t === 'baseline_verified' ? 'hjw-tag-ok' : t.includes('inferred') || t === 'legacy_source' ? 'hjw-tag-warn' : '';
-      return '<span class="hjw-tag ' + cls + '">' + t.replace(/_/g,' ') + '</span>';
+      const label = TAG_LABELS[t] || t.replace(/_/g, ' ');
+      return '<span class="hjw-tag ' + cls + '" title="' + esc(t) + '">' + esc(label) + '</span>';
     }).join(' ');
     const signalBadge = tenXSignal ? '<span class="hjw-signal-badge">10x</span>' : '';
     let result = esc(firstIssueText(item));
