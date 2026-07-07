@@ -48,6 +48,9 @@ class SharesSSETask(BaseTask):
             audit_rows = []
             for _, row in sse_df.iterrows():
                 code = str(row['基金代码'])
+                # Skip non-SSE codes (SSE codes start with 5 or 6)
+                if not code.startswith(('5', '6')):
+                    continue
                 total_shares = float(row['基金份额'])
                 name = row['基金简称']
                 snap_rows.append((code, total_shares, None, None, None, None, None, None, None))
