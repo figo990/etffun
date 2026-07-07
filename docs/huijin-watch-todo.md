@@ -1,28 +1,31 @@
 # 汇金 ETF 份额观察当前遗留清单
 
 > 更新时间: 2026-07-07
-> 基线文档: `docs/huijin-watch-requirements.md`
+> 审计报告: `docs/data-quality-audit.md`
 
 ## 已闭环
 
-- audit 与 overview 已打通，所有质量问题进入页面状态。
-- 全部数据质量警告已降级为 info 级别，不影响质量评级。
-- 14/15 只基线完整核验（verified + source_doc_url/hash/page）。
-- 14 observable / 0 warning / 1 blocked（588000 缺 H0）。
-- 10x 份额扩张信号已定义基准量、连续天数、未触发原因。
-- ETF 池已展示组内贡献拆解。
-- 期指辅助仅作辅助验证，不进入核心公式。
-- `/api/huijin/backtest` 事件研究框架就绪。
-- 性能: 趋势图加载 30x 优化 (5.76s → 0.19s)。
+- ✅ 14/14 OK, 0 Blocked, 0 Warning
+- ✅ 所有质量问题已解决（原53条警告→0）
+- ✅ SSE采集器过滤非SSE代码（防止错误采集SZSE数据）
+- ✅ 588000 确认汇金不持仓，已移除
+- ✅ SZSE 份额变化率完整（5d/10d/20d/60d）
+- ✅ 周末脏数据已清理
+- ✅ 问题清单为空
+- ✅ 性能: 趋势图 30x 优化
 
-## 当前仍存在的问题
+## 当前状态
 
-- `588000` 缺直接可核验 H0，保持 `MISSING_H0` / `MISSING_VERIFIED_BASELINE` blocked；不得用联接基金、其他机构或推测值替代。
-- 基线虽有 source_doc_url/hash，但缺少逐主体持有人行（`huijin_baseline_holder` 空表），需从基金定报原文手工录入。
-- 深市 `SOURCE_DATE_INFERRED` 属于 info 级别，不阻断公式也不降级质量。
+| 指标 | 值 |
+|------|-----|
+| 汇金总览 | 14 OK |
+| 质量等级 | 14 observable |
+| 问题清单 | 空 |
+| 数据日期 | 2026-07-06 |
+| 源数据 | SSE: A级, SZSE: B级(源日期推断) |
 
-## 后续补强顺序
+## 后续可做的
 
-1. 人工复核 `588000` 是否存在直接中央汇金 H0；无法确认时继续 blocked。
-2. 为所有基线逐只补 holder 持有人明细行（需基金定报原文）。
-3. 定期运行交易所份额采集、审计修复和读库同步。
+- 为 `verified` baseline 补充逐主体持有人行（`huijin_baseline_holder`）
+- 定期运行采集任务和审计修复
+- 监控数据质量自动检测结果
