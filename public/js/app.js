@@ -1158,7 +1158,7 @@ const TAG_LABELS = {
     const obsTitle = sigReason || notReason || issueTypeList(item) || qualityLabel(item);
     const obsDetail = sigReason ? sigReason : notReason;
     html += `<tr>
-      <td><span class="code clickable" data-code="${esc(item.code)}" data-name="${esc(item.name || '')}">${esc(item.code)}</span><br><span class="hjw-name">${esc(item.name || '')}</span><br><span class="hjw-row-tags">${obsHtml}</span></td>
+      <td><span class="code clickable" data-code="${esc(item.code)}" data-name="${esc(item.name || '')}">${esc(item.code)}</span> <span class="hjw-name">${esc(item.name || '')}</span> ${obsHtml}</td>
       <td>${statusHtml} ${signalBadge}<br><span class="hjw-row-tags">${tagShort}</span></td>
       <td class="hjw-result" title="${esc(obsTitle)}">${obsDetail ? esc(obsDetail) : _na()}</td>
       <td class="hjw-result" title="${esc(result)}">${result || _na()}</td>
