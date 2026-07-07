@@ -2018,7 +2018,7 @@ def _quality_display_state(source_level, blockers, warnings, share, audit):
         return {
             'label': '源日期推断',
             'rule': 'source_date_inferred',
-            'note': '深市份额源日期由交易日历推断，进入 warning 但不阻断公式',
+            'note': '深市份额源日期由交易日历推断，信息性标记，不影响计算',
         }
     if share and share.get('stale'):
         return {
@@ -2026,7 +2026,8 @@ def _quality_display_state(source_level, blockers, warnings, share, audit):
             'rule': 'stale',
             'note': '最新份额日早于观察日期，进入 warning',
         }
-    if warnings:
+    real_warnings = [w for w in (warnings or []) if w.get('severity') != 'info']
+    if real_warnings:
         return {
             'label': '质量警告',
             'rule': 'warning',
