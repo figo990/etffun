@@ -1171,6 +1171,13 @@ function renderHuijinWatch(){
 
   let html = '<div class="hjw-head">';
   html += '<div class="hjw-title">汇金 ETF 份额观察</div>';
+  html += '<details class="hjw-usage-details"><summary>使用说明</summary><div class="hjw-usage-body">';
+  html += '<p><b>第一步：数据质量</b>—确认状态/质量为"可观察"，无阻断/警告。<b>排除</b>栏显示被移除ETF原因。</p>';
+  html += '<p><b>第二步：单ETF分析</b>—点击代码查看K线+Y区间趋势。观察等级：增强观察=份额显著扩张，减弱观察=份额显著收缩，观望=无明显变化。10x信号仅表示持续份额异常放大，不确认交易。</p>';
+  html += '<p><b>第三步：ETF池共振</b>—同指数多ETF合并观察。共振标记组内ETF方向一致性。单只贡献>60%时标记"驱动"，注意单只异动风险。</p>';
+  html += '<p><b>第四步：期指辅助</b>—中金所排名仅辅助验证，不进公式。IF=沪深300，IH=上证50，IC=中证500，IM=中证1000。</p>';
+  html += '<p><b>限制</b>：份额变化不必然来自中央汇金；Y区间是相对S0归一化口径，不是实时持仓；不输出买卖建议。</p>';
+  html += '</div></details>';
   html += `<div class="hjw-summary"><span>区间可算 <b>${formulaCalc}</b></span><span>质量警告 <b>${warningDoc}</b></span><span>数据阻断 <b>${dataBlocked}</b></span><span>推断源日期 <b>${inferred}</b></span>${tenX ? `<span class="hjw-signal">10x份额扩张 <b>${tenX}</b></span>` : ''}</div>`;
   html += '<div class="hjw-subhead"><span>系统数据截至 <b>' + esc(as_of) + '</b></span><span>有效份额日 <b>' + esc(latest_share_date) + '</b></span><span>观察池 <b>14</b> 只</span></div>';
   html += '<div class="hjw-subnote">观察池基于基金年报汇金持仓数据。已排除: 588000(华夏科创50ETF)—2025年报前十名持有人未见中央汇金。</div>';
@@ -1352,9 +1359,10 @@ const tagEls = tags.map(t => {
         const state = gi.quality_filter_level === 'blocked' ? '<span class="hjw-block">blocked</span>' :
           gi.quality_filter_level === 'warning' ? '<span class="hjw-warn">warning</span>' : '<span class="hjw-ok">ok</span>';
         const contrib = gi.change_contribution_5d_pct != null ? gi.change_contribution_5d_pct.toFixed(1) + '%' : '--';
+        const isDriver = gi.change_contribution_5d_pct != null && Math.abs(gi.change_contribution_5d_pct) > 60;
         const giChg = (v) => v != null && !isNaN(v) ? '<span class="hjw-chg' + (v < -10 ? ' hjw-chg-bad' : v > 2 ? ' hjw-chg-good' : '') + '">' + Number(v).toFixed(1) + '%</span>' : _na();
         html += `<tr class="hjw-pool-child">
-          <td class="hjw-pool-indent">${esc(gi.name || gi.code)}</td>
+          <td class="hjw-pool-indent">${esc(gi.name || gi.code)}${isDriver ? ' <span class="hjw-signal-badge">驱动</span>' : ''}</td>
           <td>${esc(gi.code)}</td>
           <td>${state}</td>
           <td>${esc(gi.share_change_direction_label || '')}</td>
