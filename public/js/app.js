@@ -1036,6 +1036,35 @@ function renderHuijinDetailMeta(code){
   return html;
 }
 
+const TAG_LABELS = {
+  baseline_verified: '基准已核验',
+  baseline_unverified: '基准未核验',
+  source_level_a: '源A级(交易所直采)',
+  source_level_b: '源B级(交易所推断)',
+  source_level_c: '源C级(滞后)',
+  source_level_d: '源D级(旧数据)',
+  exchange_source: '交易所源',
+  source_date_inferred: '源日期推断',
+  doc_url_missing: '缺公告链接',
+  missing_h0: '缺H0',
+  missing_verified_baseline: '缺verified基准',
+  data_blocked: '数据阻断',
+  stale_share: '份额滞后',
+  sse_source_lag: '上交所滞后',
+  legacy_source: '旧数据源',
+  share_gap: '份额断档',
+  abnormal_jump: '份额异常跳变',
+};
+const TAG_TIPS = {
+  source_date_inferred: '深市份额数据无明确源日期，由交易日历推断',
+  source_level_a: '上交所交易所直采，源日期明确',
+  source_level_b: '深交所交易所直采，源日期由日历推断',
+  exchange_source: '数据来自交易所官方接口',
+  baseline_verified: '汇金披露基准已核验通过',
+  stale_share: '份额数据超过5个交易日未更新',
+  sse_source_lag: '上交所份额数据采集存在滞后',
+};
+
 function renderHuijinWatch(){
   const panel = document.getElementById('huijinWatchPanel');
   if(!panel || !huijinOverview || !Array.isArray(huijinOverview.items)) return;
@@ -1132,35 +1161,7 @@ function renderHuijinWatch(){
     else if(ol === 'blocked') obsHtml = '<span class="hjw-block">数据阻断</span>';
     else obsHtml = '<span class="hjw-tag">观望</span>';
     // Quality tags display
-const TAG_LABELS = {
-    baseline_verified: '基准已核验',
-    baseline_unverified: '基准未核验',
-    source_level_a: '源A级(交易所直采)',
-    source_level_b: '源B级(交易所推断)',
-    source_level_c: '源C级(滞后)',
-    source_level_d: '源D级(旧数据)',
-    exchange_source: '交易所源',
-    source_date_inferred: '源日期推断',
-    doc_url_missing: '缺公告链接',
-    missing_h0: '缺H0',
-    missing_verified_baseline: '缺verified基准',
-    data_blocked: '数据阻断',
-    stale_share: '份额滞后',
-    sse_source_lag: '上交所滞后',
-    legacy_source: '旧数据源',
-    share_gap: '份额断档',
-    abnormal_jump: '份额异常跳变',
-  };
-  const TAG_TIPS = {
-    source_date_inferred: '深市份额数据无明确源日期，由交易日历推断',
-    source_level_a: '上交所交易所直采，源日期明确',
-    source_level_b: '深交所交易所直采，源日期由日历推断',
-    exchange_source: '数据来自交易所官方接口',
-    baseline_verified: '汇金披露基准已核验通过',
-    stale_share: '份额数据超过5个交易日未更新',
-    sse_source_lag: '上交所份额数据采集存在滞后',
-  };
-  const tagEls = tags.map(t => {
+const tagEls = tags.map(t => {
       const cls = t === 'baseline_verified' ? 'hjw-tag-ok' : t.includes('inferred') || t === 'legacy_source' ? 'hjw-tag-warn' : '';
       const label = TAG_LABELS[t] || t.replace(/_/g, ' ');
       const tip = TAG_TIPS[t] || label;
@@ -1249,7 +1250,7 @@ const TAG_LABELS = {
         const state = gi.quality_filter_level === 'blocked' ? '<span class="hjw-block">blocked</span>' :
           gi.quality_filter_level === 'warning' ? '<span class="hjw-warn">warning</span>' : '<span class="hjw-ok">ok</span>';
         const contrib = gi.change_contribution_5d_pct != null ? gi.change_contribution_5d_pct.toFixed(1) + '%' : '--';
-        const giChg = (v) => v != null ? '<span class="hjw-chg' + (v < -10 ? ' hjw-chg-bad' : v > 2 ? ' hjw-chg-good' : '') + '">' + v.toFixed(1) + '%</span>' : _na();
+        const giChg = (v) => v != null && !isNaN(v) ? '<span class="hjw-chg' + (v < -10 ? ' hjw-chg-bad' : v > 2 ? ' hjw-chg-good' : '') + '">' + Number(v).toFixed(1) + '%</span>' : _na();
         html += `<tr class="hjw-pool-child">
           <td class="hjw-pool-indent">${esc(gi.name || gi.code)}</td>
           <td>${esc(gi.code)}</td>

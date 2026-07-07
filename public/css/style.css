@@ -58,11 +58,9 @@ tbody tr:hover td{background:#fff6e5}
 .pos{color:#d94b45}
 .neg{color:#16833a}
 .na{color:#a0aec0}
-.badge-sse,.badge-szse,.badge-running,.badge-pending{display:inline-block;min-width:22px;height:18px;padding:0 5px;border-radius:2px;font-size:12px;line-height:18px;text-align:center}
+.badge-sse,.badge-szse{display:inline-block;min-width:22px;height:18px;padding:0 5px;border-radius:2px;font-size:12px;line-height:18px;text-align:center}
 .badge-sse{background:#e9f4fb;color:#206798;border:1px solid #b8d7e8}
 .badge-szse{background:#eaf6ee;color:#16833a;border:1px solid #b9dec4}
-.badge-running{background:#fff8dc;color:#8a6d1b;border:1px solid #e6d89a}
-.badge-pending{background:#eef6fb;color:#206798;border:1px solid #b8d7e8}
 .hj-mark{margin-left:3px;color:#00b894;font-size:11px;cursor:help}
 .loading{text-align:center;padding:48px;color:#a0aec0;font-size:14px}
 .loading::after{content:"";display:block;width:26px;height:26px;border:3px solid #e2e8f0;border-top-color:#00b894;border-radius:50%;margin:14px auto;animation:spin .8s linear infinite}
