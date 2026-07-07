@@ -1078,7 +1078,7 @@ function renderHuijinWatch(){
   // ─── Table 1: 汇金 ETF 份额观察 ───
   html += '<div class="hjt-title"><span class="hjt-dot ok"></span>汇金 ETF 份额观察<span class="hjt-note">' + formulaCalc + '/' + items.length + ' 区间可算，点击代码查看K线+区间趋势</span></div>';
   html += '<div class="hjw-table-note"><b>字段说明</b>：<b>报告期</b>—汇金持有数据的来源报告（年报/半年报）。<b>披露日</b>—公告日期，此日期前的数据不可用。<b>份额日</b>—ETF总份额S1的最新交易日。<b>状态/质量</b>—可观察=基准核验+数据完整可进入公式；warning=可观察但默认不进回测；blocked=不输出区间和有效信号。<b>区间</b>—Y_min~Y_max归一化区间，Y_max=B=S1/S0（当前份额比），Y_min=max(0, B-(1-A))，A=H0/S0（披露日汇金占比）。<b>用法</b>：份额扩张→增强观察，份额收缩→减弱观察，无明显变化→观望。10x仅表示持续份额扩张，不确认交易。<b>变化%</b>—份额相对N个交易日前的变化率。</div>';
-  html += '<div class="hjw-table-wrap"><table class="hjw-table"><thead><tr><th>代码</th><th>名称</th><th>状态/质量</th><th>观察/未触发原因</th><th>区间/原因</th><th>份额变动强度</th><th>5日%</th><th>10日%</th><th>20日%</th><th>60日%</th><th>观察组</th><th>报告期</th><th>披露日</th><th>份额日</th></tr></thead><tbody>';
+  html += '<div class="hjw-table-wrap"><table class="hjw-table"><thead><tr><th>代码/名称</th><th>状态/质量</th><th>观察/未触发原因</th><th>区间/原因</th><th>份额变动强度</th><th>5日%</th><th>10日%</th><th>20日%</th><th>60日%</th><th>观察组</th><th>报告期</th><th>披露日</th><th>份额日</th></tr></thead><tbody>';
   const okItems = items.filter(i => i.can_calculate_interval);
   rows.forEach(item => {
     const base = item.baseline || {};
@@ -1138,12 +1138,13 @@ const TAG_LABELS = {
     stale_share: '份额数据超过5个交易日未更新',
     sse_source_lag: '上交所份额数据采集存在滞后',
   };
-  const tagHtml = tags.map(t => {
+  const tagEls = tags.map(t => {
       const cls = t === 'baseline_verified' ? 'hjw-tag-ok' : t.includes('inferred') || t === 'legacy_source' ? 'hjw-tag-warn' : '';
       const label = TAG_LABELS[t] || t.replace(/_/g, ' ');
       const tip = TAG_TIPS[t] || label;
       return '<span class="hjw-tag ' + cls + '" title="' + esc(tip) + '">' + esc(label) + '</span>';
-    }).join(' ');
+    });
+    const tagShort = tagEls.slice(0, 3).join(' ');
     const signalBadge = tenXSignal ? '<span class="hjw-signal-badge">10x</span>' : '';
     let result = esc(firstIssueText(item));
     if(item.can_calculate_interval && item.interval){
@@ -1157,9 +1158,8 @@ const TAG_LABELS = {
     const obsTitle = sigReason || notReason || issueTypeList(item) || qualityLabel(item);
     const obsDetail = sigReason ? sigReason : notReason;
     html += `<tr>
-      <td><span class="code clickable" data-code="${esc(item.code)}" data-name="${esc(item.name || '')}">${esc(item.code)}<br><span class="hjw-row-tags">${obsHtml}</span></span></td>
-      <td class="hjw-name">${esc(item.name || '')}</td>
-      <td>${statusHtml} ${signalBadge}<br><span class="hjw-row-tags"><span class="hjw-source-tag">${esc(sourceLevelText(sl))}</span>${tagHtml}</span></td>
+      <td><span class="code clickable" data-code="${esc(item.code)}" data-name="${esc(item.name || '')}">${esc(item.code)}</span><br><span class="hjw-name">${esc(item.name || '')}</span><br><span class="hjw-row-tags">${obsHtml}</span></td>
+      <td>${statusHtml} ${signalBadge}<br><span class="hjw-row-tags">${tagShort}</span></td>
       <td class="hjw-result" title="${esc(obsTitle)}">${obsDetail ? esc(obsDetail) : _na()}</td>
       <td class="hjw-result" title="${esc(result)}">${result || _na()}</td>
       <td class="hjw-num">${item.vs_baseline_pct != null ? chg(item.vs_baseline_pct) : _na()}</td>
