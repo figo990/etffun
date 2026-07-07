@@ -1970,11 +1970,6 @@ def _compute_quality_tags(baseline, share, audit, warnings, blockers=None, sourc
             tags.append('stale_share')
             if 'sse' in src:
                 tags.append('sse_source_lag')
-        flags = _flag_set(audit.get('quality_flags'))
-        if 'SHARE_GAP' in flags:
-            tags.append('share_gap')
-        if 'ABNORMAL_JUMP' in flags:
-            tags.append('abnormal_jump')
     elif share and share.get('stale'):
         tags.append('stale_share')
     for w in (warnings or []):
