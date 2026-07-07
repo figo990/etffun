@@ -683,6 +683,13 @@ def _previous_weekday(value, include_self=True):
     return d.strftime('%Y-%m-%d')
 
 
+def _date_gap_days(later, earlier):
+    try:
+        return max(0, (_parse_date(later) - _parse_date(earlier)).days)
+    except Exception:
+        return None
+
+
 def infer_trading_date(base_date=None, exchange='CN'):
     """Infer a trading date from a run date using calendar data or weekday fallback."""
     if base_date is None:
@@ -1345,6 +1352,7 @@ def _quality_issues_by_date(issues):
 
 def _latest_valid_share(code, as_of_date, exchange):
     as_of = _nullable_norm_date(as_of_date)
+    expected_share_date = infer_trading_date(as_of, exchange=exchange)
     rows = _to_records(query("""
         SELECT date, code, total_shares
         FROM daily_snapshot
@@ -1357,18 +1365,22 @@ def _latest_valid_share(code, as_of_date, exchange):
         if not is_trading_day(row['date'], exchange):
             continue
         audit = _audit_for_share(code, row['date'])
-        stale = False
-        if row['date'] != as_of:
-            try:
-                gap = (datetime.strptime(str(as_of)[:10], '%Y-%m-%d') - datetime.strptime(str(row['date'])[:10], '%Y-%m-%d')).days
-                stale = gap > 5
-            except Exception:
-                stale = True
+        row_date = _nullable_norm_date(row['date'])
+        stale = bool(expected_share_date and row_date and row_date < expected_share_date)
+        stale_days = _date_gap_days(expected_share_date, row_date) if stale else 0
+        data_lag_reason = None
+        if stale:
+            data_lag_reason = 'latest_share_before_expected_trading_date'
+        elif expected_share_date and as_of and expected_share_date != as_of:
+            data_lag_reason = 'as_of_non_trading_uses_previous_trading_date'
         return {
-            'date': row['date'],
+            'date': row_date,
             'total_shares': row.get('total_shares'),
             'audit': audit,
             'stale': stale,
+            'stale_days': stale_days,
+            'expected_share_date': expected_share_date,
+            'data_lag_reason': data_lag_reason,
         }
     return None
 
@@ -1490,10 +1502,17 @@ def _validate_huijin_inputs(code, baseline, share, skip_quality=False, skip_trad
     audit = share.get('audit')
     if share.get('stale'):
         stale_type = 'SSE_SOURCE_STALE' if audit and str(audit.get('source_name') or '').startswith('sse') else 'STALE_SHARE_DATE'
+        stale_days = share.get('stale_days')
+        expected = share.get('expected_share_date')
+        stale_msg = '份额数据滞后于观察日期，按最近有效交易日仅作滞后观察'
+        if expected:
+            stale_msg = f"份额日早于应有交易日 {expected}，按最近有效交易日仅作滞后观察"
+        if stale_days:
+            stale_msg += f"，滞后{stale_days}天"
         warnings.append(_issue(
             stale_type,
             'warning',
-            '份额数据滞后于观察日期，按最近有效交易日仅作滞后观察',
+            stale_msg,
             code=code,
             date=share.get('date'),
         ))
@@ -1584,6 +1603,29 @@ def _calculate_huijin_interval(baseline, share):
     }
 
 
+def _ten_x_recent_days(recent, baseline, threshold):
+    days = []
+    if not baseline or baseline <= 0:
+        return days
+    for date, change in recent or []:
+        ratio = abs(change) / baseline
+        if change > 0:
+            direction = 'expansion'
+        elif change < 0:
+            direction = 'contraction'
+        else:
+            direction = 'flat'
+        days.append({
+            'date': date,
+            'share_delta': round(change, 2),
+            'share_delta_万': round(change / 1e4, 2),
+            'ratio_to_baseline': round(ratio, 2),
+            'direction': direction,
+            'passed': bool(change > baseline * threshold),
+        })
+    return days
+
+
 def _detect_ten_x_signal(code, as_of_date, lookback=30, baseline_window=20, threshold=10, consecutive=7):
     """Detect positive share expansion exceeding threshold * baseline for N recent trading days."""
     empty = {
@@ -1598,6 +1640,7 @@ def _detect_ten_x_signal(code, as_of_date, lookback=30, baseline_window=20, thre
         'trigger_reason': None,
         'not_triggered_reasons': [],
         'direction': 'unknown',
+        'recent_days': [],
     }
     try:
         exchange = _code_exchange(code)
@@ -1652,6 +1695,7 @@ def _detect_ten_x_signal(code, as_of_date, lookback=30, baseline_window=20, thre
             result['not_triggered_reasons'] = ['基准量无效，无法计算10x倍率']
             return result
         recent = signed_changes[-consecutive:]
+        recent_days = _ten_x_recent_days(recent, baseline, threshold)
         positive_days = [(d, c / baseline) for d, c in recent if c > baseline * threshold]
         negative_days = [(d, abs(c) / baseline) for d, c in recent if c < -baseline * threshold]
         recent_sum = sum(c for _, c in recent)
@@ -1680,6 +1724,7 @@ def _detect_ten_x_signal(code, as_of_date, lookback=30, baseline_window=20, thre
             'trigger_reason': f"连续{len(positive_days)}个交易日超过{threshold}倍基准量" if active else None,
             'not_triggered_reasons': not_triggered,
             'direction': direction,
+            'recent_days': recent_days,
         }
     except Exception:
         result = dict(empty)
@@ -1696,6 +1741,262 @@ def _pool_change_ratio(group_items, change_key, total_shares):
     )
     if total_shares and total_change != 0:
         return round(total_change * 10000 / total_shares, 4)  # 万份→百分比
+
+
+def _component_share_direction(item):
+    chg5d = item.get('share_change_ratio_5d')
+    chg20d = item.get('share_change_ratio_20d')
+    basis = chg20d if chg20d is not None else chg5d
+    if basis is None:
+        return 'unknown'
+    if basis >= 2 or (chg5d is not None and chg5d >= 3):
+        return 'expansion'
+    if basis <= -2 or (chg5d is not None and chg5d <= -3):
+        return 'contraction'
+    return 'flat'
+
+
+def _direction_label(direction):
+    return {
+        'expansion': '份额扩张',
+        'contraction': '份额收缩',
+        'flat': '无明显变化',
+        'mixed': '分歧',
+        'unknown': '样本不足',
+    }.get(direction, direction or '样本不足')
+
+
+def _group_resonance_summary(components, group_ratio_5d, group_ratio_20d):
+    components = components or []
+    counts = {'expansion': 0, 'contraction': 0, 'flat': 0, 'unknown': 0}
+    for comp in components:
+        direction = comp.get('share_change_direction') or 'unknown'
+        counts[direction if direction in counts else 'unknown'] += 1
+
+    valid_count = counts['expansion'] + counts['contraction'] + counts['flat']
+    dominant_direction = 'unknown'
+    if counts['expansion'] and counts['contraction']:
+        dominant_direction = 'mixed'
+    elif counts['expansion'] > counts['contraction'] and counts['expansion'] >= max(1, valid_count / 2):
+        dominant_direction = 'expansion'
+    elif counts['contraction'] > counts['expansion'] and counts['contraction'] >= max(1, valid_count / 2):
+        dominant_direction = 'contraction'
+    elif valid_count and counts['flat'] == valid_count:
+        dominant_direction = 'flat'
+
+    def contribution_value(comp):
+        value = comp.get('change_contribution_5d_pct')
+        if value is None:
+            value = comp.get('change_contribution_20d_pct')
+        return abs(value or 0)
+
+    main = None
+    if components:
+        main = max(components, key=contribution_value)
+        if contribution_value(main) == 0:
+            main = max(components, key=lambda c: abs(c.get('share_change_ratio_5d') or c.get('share_change_ratio_20d') or 0))
+
+    reasons = []
+    pool_basis = group_ratio_20d if group_ratio_20d is not None else group_ratio_5d
+    if pool_basis is not None:
+        reasons.append(f"ETF池份额变化{pool_basis:.1f}%")
+    if main:
+        main_contribution = main.get('change_contribution_5d_pct')
+        if main_contribution is None:
+            main_contribution = main.get('change_contribution_20d_pct')
+        if main_contribution is not None:
+            reasons.append(f"主贡献 {main.get('code')} {main_contribution:.1f}%")
+        else:
+            reasons.append(f"主变化 {main.get('code')}")
+
+    resonance_level = 'no_signal'
+    if dominant_direction == 'mixed':
+        resonance_level = 'divergent'
+        reasons.append('组内ETF方向分歧')
+    elif dominant_direction in ('expansion', 'contraction'):
+        dominant_count = counts[dominant_direction]
+        if valid_count >= 2 and dominant_count == valid_count:
+            resonance_level = 'strong_resonance'
+            reasons.append('组内有效成分方向一致')
+        elif valid_count >= 2 and dominant_count >= max(2, valid_count / 2):
+            resonance_level = 'weak_resonance'
+            reasons.append('多数有效成分方向一致')
+        elif main and contribution_value(main) >= 70 and len(components) > 1:
+            resonance_level = 'single_driven'
+            reasons.append('主要由单只ETF驱动')
+        else:
+            resonance_level = 'single_or_weak'
+            reasons.append('有效成分不足，需单只ETF复核')
+    elif dominant_direction == 'flat':
+        resonance_level = 'flat'
+        reasons.append('组内份额无明显变化')
+    else:
+        reasons.append('历史份额样本不足')
+
+    resonance_label = {
+        'strong_resonance': '强共振',
+        'weak_resonance': '弱共振',
+        'single_driven': '单只驱动',
+        'single_or_weak': '弱信号',
+        'divergent': '分歧',
+        'flat': '平稳',
+        'no_signal': '样本不足',
+    }.get(resonance_level, resonance_level)
+
+    return {
+        'expansion_count': counts['expansion'],
+        'contraction_count': counts['contraction'],
+        'flat_count': counts['flat'],
+        'unknown_count': counts['unknown'],
+        'dominant_direction': dominant_direction,
+        'dominant_direction_label': _direction_label(dominant_direction),
+        'main_contributor': {
+            'code': main.get('code'),
+            'name': main.get('name'),
+            'share_change_ratio_5d': main.get('share_change_ratio_5d'),
+            'share_change_ratio_20d': main.get('share_change_ratio_20d'),
+            'change_contribution_5d_pct': main.get('change_contribution_5d_pct'),
+            'change_contribution_20d_pct': main.get('change_contribution_20d_pct'),
+        } if main else None,
+        'resonance_level': resonance_level,
+        'resonance_label': resonance_label,
+        'resonance_reasons': _dedupe_strings(reasons),
+    }
+
+
+def _latest_index_valuation_for(index_code, as_of):
+    if not index_code or not _table_exists('index_valuation'):
+        return None
+    row = query_one("""
+        SELECT date, index_code, index_name, pe, pb, dividend_yield, pe_percentile, pb_percentile
+        FROM index_valuation
+        WHERE index_code = ? AND date <= ?
+        ORDER BY date DESC
+        LIMIT 1
+    """, [str(index_code), _nullable_norm_date(as_of)])
+    return row or None
+
+
+def _representative_kline_context(code, as_of):
+    rows = _to_records(query("""
+        SELECT date, close
+        FROM daily_kline
+        WHERE code = ? AND close IS NOT NULL AND date <= ?
+        ORDER BY date DESC
+        LIMIT 80
+    """, [str(code), _nullable_norm_date(as_of)]))
+    if not rows:
+        return {
+            'representative_code': str(code),
+            'price_data_status': 'missing',
+            'return_20d_pct': None,
+            'drawdown_20d_pct': None,
+            'return_60d_pct': None,
+            'drawdown_60d_pct': None,
+        }
+    rows.reverse()
+    current = rows[-1].get('close')
+
+    def window_metrics(window):
+        if len(rows) < window + 1 or not current:
+            return None, None
+        base = rows[-window-1].get('close')
+        win_rows = rows[-window:]
+        high = max([r.get('close') for r in win_rows if r.get('close') is not None] or [None])
+        ret = round((current - base) / base * 100, 4) if base else None
+        dd = round((current - high) / high * 100, 4) if high else None
+        return ret, dd
+
+    ret20, dd20 = window_metrics(20)
+    ret60, dd60 = window_metrics(60)
+    return {
+        'representative_code': str(code),
+        'price_data_status': 'ok',
+        'return_20d_pct': ret20,
+        'drawdown_20d_pct': dd20,
+        'return_60d_pct': ret60,
+        'drawdown_60d_pct': dd60,
+    }
+
+
+def _market_context_for_group(group_name, group_items, as_of):
+    if not group_items:
+        return {
+            'support_level': 'insufficient_data',
+            'support_label': '市场环境样本不足',
+            'reasons': ['观察组无成分ETF'],
+        }
+    representative = max(
+        group_items,
+        key=lambda i: ((i.get('latest_share') or {}).get('total_shares') or 0),
+    )
+    code = representative.get('code')
+    price_ctx = _representative_kline_context(code, as_of)
+
+    valuations = []
+    seen_index_codes = set()
+    for item in group_items:
+        info = _fund_info(item.get('code'))
+        index_code = info.get('index_code')
+        if not index_code or index_code in seen_index_codes:
+            continue
+        seen_index_codes.add(index_code)
+        valuation = _latest_index_valuation_for(index_code, as_of)
+        if valuation:
+            valuations.append(valuation)
+
+    reasons = []
+    support_level = 'neutral'
+    dd20 = price_ctx.get('drawdown_20d_pct')
+    dd60 = price_ctx.get('drawdown_60d_pct')
+    ret20 = price_ctx.get('return_20d_pct')
+    low_valuation = any(
+        (v.get('pe_percentile') is not None and v.get('pe_percentile') <= 35)
+        or (v.get('pb_percentile') is not None and v.get('pb_percentile') <= 35)
+        for v in valuations
+    )
+    high_valuation = any(
+        (v.get('pe_percentile') is not None and v.get('pe_percentile') >= 80)
+        or (v.get('pb_percentile') is not None and v.get('pb_percentile') >= 80)
+        for v in valuations
+    )
+
+    if dd20 is not None:
+        reasons.append(f"代表ETF 20日回撤{dd20:.1f}%")
+    if dd60 is not None:
+        reasons.append(f"代表ETF 60日回撤{dd60:.1f}%")
+    if low_valuation:
+        reasons.append('指数估值分位偏低')
+    if high_valuation:
+        reasons.append('指数估值分位偏高')
+
+    if dd20 is None and dd60 is None and not valuations:
+        support_level = 'insufficient_data'
+        reasons.append('缺少行情/估值环境数据')
+    elif (dd20 is not None and dd20 <= -5) or (dd60 is not None and dd60 <= -8) or low_valuation:
+        support_level = 'supportive'
+    elif (ret20 is not None and ret20 >= 8) or high_valuation:
+        support_level = 'caution'
+
+    support_label = {
+        'supportive': '环境支持观察',
+        'neutral': '环境中性',
+        'caution': '环境需谨慎',
+        'insufficient_data': '环境数据不足',
+    }.get(support_level, support_level)
+    return {
+        'group_name': group_name,
+        'support_level': support_level,
+        'support_label': support_label,
+        'reasons': _dedupe_strings(reasons),
+        'representative_code': price_ctx.get('representative_code'),
+        'price_data_status': price_ctx.get('price_data_status'),
+        'return_20d_pct': price_ctx.get('return_20d_pct'),
+        'drawdown_20d_pct': price_ctx.get('drawdown_20d_pct'),
+        'return_60d_pct': price_ctx.get('return_60d_pct'),
+        'drawdown_60d_pct': price_ctx.get('drawdown_60d_pct'),
+        'valuations': valuations,
+    }
 
 
 def _audit_item_additional_issues(code, baseline, share, audit):
@@ -2095,6 +2396,7 @@ def get_huijin_overview(as_of_date=None):
                 'trigger_reason': None,
                 'not_triggered_reasons': ['数据阻断，10x信号不输出'],
                 'direction': 'unknown',
+                'recent_days': [],
             }
         else:
             ten_x_signal = _detect_ten_x_signal(code, as_of)
@@ -2117,6 +2419,9 @@ def get_huijin_overview(as_of_date=None):
                 'total_shares': share.get('total_shares') if share else None,
                 'total_shares_亿': round(share.get('total_shares') / 1e8, 4) if share and share.get('total_shares') is not None else None,
                 'stale': share.get('stale') if share else None,
+                'stale_days': share.get('stale_days') if share else None,
+                'expected_share_date': share.get('expected_share_date') if share else None,
+                'data_lag_reason': share.get('data_lag_reason') if share else None,
                 'source_name': audit.get('source_name') if audit else None,
                 'source_date': audit.get('source_date') if audit else None,
                 'source_date_inferred': audit.get('source_date_inferred') if audit else None,
@@ -2170,6 +2475,7 @@ def get_huijin_overview(as_of_date=None):
         for i in group_items:
             latest = i.get('latest_share') or {}
             latest_shares = latest.get('total_shares') or 0
+            component_direction = _component_share_direction(i)
             components.append({
                 'code': i.get('code'),
                 'name': i.get('name'),
@@ -2187,9 +2493,18 @@ def get_huijin_overview(as_of_date=None):
                 'share_change_20d': i.get('share_change_20d'),
                 'share_change_ratio_5d': i.get('share_change_ratio_5d'),
                 'share_change_ratio_20d': i.get('share_change_ratio_20d'),
+                'share_change_direction': component_direction,
+                'share_change_direction_label': _direction_label(component_direction),
                 'change_contribution_5d_pct': round((i.get('share_change_5d') or 0) / total_change_5d * 100, 2) if total_change_5d else None,
                 'change_contribution_20d_pct': round((i.get('share_change_20d') or 0) / total_change_20d * 100, 2) if total_change_20d else None,
             })
+        group_ratio_1d = _pool_change_ratio(group_items, 'share_change_1d', total_shares)
+        group_ratio_5d = _pool_change_ratio(group_items, 'share_change_5d', total_shares)
+        group_ratio_10d = _pool_change_ratio(group_items, 'share_change_10d', total_shares)
+        group_ratio_20d = _pool_change_ratio(group_items, 'share_change_20d', total_shares)
+        group_ratio_60d = _pool_change_ratio(group_items, 'share_change_60d', total_shares)
+        resonance = _group_resonance_summary(components, group_ratio_5d, group_ratio_20d)
+        market_context = _market_context_for_group(group_name, group_items, as_of)
         groups.append({
             'group_name': group_name,
             'scope_note': 'ETF 池份额观察，不代表单一账户持有比例',
@@ -2201,11 +2516,22 @@ def get_huijin_overview(as_of_date=None):
             'warning_codes': [i['code'] for i in group_items if i.get('warnings')],
             'latest_total_shares': total_shares,
             'total_s0_shares': total_s0,
-            'share_change_ratio_1d': _pool_change_ratio(group_items, 'share_change_1d', total_shares),
-            'share_change_ratio_5d': _pool_change_ratio(group_items, 'share_change_5d', total_shares),
-            'share_change_ratio_10d': _pool_change_ratio(group_items, 'share_change_10d', total_shares),
-            'share_change_ratio_20d': _pool_change_ratio(group_items, 'share_change_20d', total_shares),
-            'share_change_ratio_60d': _pool_change_ratio(group_items, 'share_change_60d', total_shares),
+            'share_change_ratio_1d': group_ratio_1d,
+            'share_change_ratio_5d': group_ratio_5d,
+            'share_change_ratio_10d': group_ratio_10d,
+            'share_change_ratio_20d': group_ratio_20d,
+            'share_change_ratio_60d': group_ratio_60d,
+            'expansion_count': resonance['expansion_count'],
+            'contraction_count': resonance['contraction_count'],
+            'flat_count': resonance['flat_count'],
+            'unknown_count': resonance['unknown_count'],
+            'dominant_direction': resonance['dominant_direction'],
+            'dominant_direction_label': resonance['dominant_direction_label'],
+            'main_contributor': resonance['main_contributor'],
+            'resonance_level': resonance['resonance_level'],
+            'resonance_label': resonance['resonance_label'],
+            'resonance_reasons': resonance['resonance_reasons'],
+            'market_context': market_context,
             'components': components,
         })
 
@@ -2234,9 +2560,24 @@ def get_huijin_overview(as_of_date=None):
         quality_level_counts[i.get('quality_level') or 'blocked'] = quality_level_counts.get(i.get('quality_level') or 'blocked', 0) + 1
     share_dates = [i['latest_share']['date'] for i in items if i['latest_share'] and i['latest_share'].get('date')]
     latest_share_date = max(share_dates) if share_dates else None
+    expected_share_dates = sorted({
+        i['latest_share']['expected_share_date']
+        for i in items
+        if i.get('latest_share') and i['latest_share'].get('expected_share_date')
+    })
+    stale_count = sum(1 for i in items if (i.get('latest_share') or {}).get('stale'))
+    source_stale_count = source_level_counts.get('C', 0)
+    inferred_count = sum(1 for i in items if (i.get('latest_share') or {}).get('source_date_inferred'))
 
     ten_x_active_count = sum(1 for i in items if i.get('signal', {}).get('effective') and i.get('ten_x_signal') and i['ten_x_signal'].get('active'))
     ten_x_active_codes = [i['code'] for i in items if i.get('signal', {}).get('effective') and i.get('ten_x_signal') and i['ten_x_signal'].get('active')]
+    market_context_summary = {
+        'supportive_count': sum(1 for g in groups if (g.get('market_context') or {}).get('support_level') == 'supportive'),
+        'neutral_count': sum(1 for g in groups if (g.get('market_context') or {}).get('support_level') == 'neutral'),
+        'caution_count': sum(1 for g in groups if (g.get('market_context') or {}).get('support_level') == 'caution'),
+        'insufficient_count': sum(1 for g in groups if (g.get('market_context') or {}).get('support_level') == 'insufficient_data'),
+        'note': '市场环境仅作为辅助验证，不进入汇金区间公式。',
+    }
     quality_summary = {
         'total': len(items),
         'formula_calculable_count': formula_calculable_count,
@@ -2251,6 +2592,12 @@ def get_huijin_overview(as_of_date=None):
         'quality_level_counts': quality_level_counts,
         'issue_counts': quality_issue_counts,
         'global_issue_count': len(global_audit_issues),
+        'stale_count': stale_count,
+        'source_stale_count': source_stale_count,
+        'inferred_count': inferred_count,
+        'expected_share_date': max(expected_share_dates) if expected_share_dates else None,
+        'expected_share_dates': expected_share_dates,
+        'market_context_count': len(groups) - market_context_summary['insufficient_count'],
     }
 
     return {
@@ -2274,6 +2621,7 @@ def get_huijin_overview(as_of_date=None):
         'ten_x_active_codes': ten_x_active_codes,
         'items': items,
         'groups': groups,
+        'market_context': market_context_summary,
         'cffex_meta': get_cffex_position_meta(as_of_date=as_of),
         'display_rules': {
             'stale': '最新份额日早于观察日期时，页面展示为数据滞后 warning，仍可观察但默认不进入回测。',
@@ -2519,6 +2867,69 @@ def _event_returns_from_path(path, windows):
     return returns, drawdowns, entry.get('date')
 
 
+def _compute_event_metrics(events, windows, min_events):
+    metrics = {}
+    ready_windows = []
+    insufficient_windows = []
+    for window in windows:
+        key = str(window)
+        usable = []
+        hits = 0
+        drawdown_values = []
+        for event in events:
+            ret_obj = (event.get('returns') or {}).get(key)
+            if not ret_obj:
+                continue
+            ret = ret_obj.get('return_pct')
+            if ret is None:
+                continue
+            usable.append(ret)
+            if event.get('direction') == 'contraction':
+                hits += 1 if ret < 0 else 0
+            else:
+                hits += 1 if ret > 0 else 0
+            dd = (event.get('max_drawdown_pct') or {}).get(key)
+            if dd is not None:
+                drawdown_values.append(dd)
+        count = len(usable)
+        window_ready = count >= min_events
+        if window_ready:
+            ready_windows.append(window)
+        else:
+            insufficient_windows.append(window)
+        metrics[key] = {
+            'window': window,
+            'signal_count': count,
+            'directional_hit_rate': round(hits / count * 100, 2) if count else None,
+            'average_return_pct': round(sum(usable) / count, 4) if count else None,
+            'max_drawdown_pct': min(drawdown_values) if drawdown_values else None,
+            'sample_status': 'ok' if window_ready else 'sample_insufficient',
+        }
+    return metrics, ready_windows, insufficient_windows
+
+
+def _event_breakdown(events, windows, min_events, field, default_label='未分组'):
+    grouped = {}
+    for event in events:
+        value = event.get(field)
+        if isinstance(value, list):
+            values = value or [default_label]
+        else:
+            values = [value or default_label]
+        for item in values:
+            grouped.setdefault(str(item), []).append(event)
+    result = {}
+    for key, subset in sorted(grouped.items(), key=lambda kv: len(kv[1]), reverse=True):
+        metrics, ready_windows, insufficient_windows = _compute_event_metrics(subset, windows, min_events)
+        result[key] = {
+            'event_count': len(subset),
+            'ready_windows': ready_windows,
+            'insufficient_windows': insufficient_windows,
+            'metrics': metrics,
+        }
+    return result
+
+
 def _baseline_for_event_date(baselines, date):
     date_s = _nullable_norm_date(date)
     candidates = [
@@ -2569,6 +2980,7 @@ def _detect_ten_x_signal_from_rows(rows, idx, baseline_window=20, threshold=10, 
         'trigger_reason': None,
         'not_triggered_reasons': [],
         'direction': 'unknown',
+        'recent_days': [],
     }
     if idx < baseline_window + consecutive:
         result = dict(empty)
@@ -2600,6 +3012,7 @@ def _detect_ten_x_signal_from_rows(rows, idx, baseline_window=20, threshold=10, 
         result['not_triggered_reasons'] = ['基准量无效，无法计算10x倍率']
         return result
     recent = changes[-consecutive:]
+    recent_days = _ten_x_recent_days(recent, baseline, threshold)
     positive_days = [(d, c / baseline) for d, c in recent if c > baseline * threshold]
     negative_days = [(d, abs(c) / baseline) for d, c in recent if c < -baseline * threshold]
     recent_sum = sum(c for _, c in recent)
@@ -2622,6 +3035,7 @@ def _detect_ten_x_signal_from_rows(rows, idx, baseline_window=20, threshold=10, 
         'trigger_reason': f"连续{len(positive_days)}个交易日超过{threshold}倍基准量" if active else None,
         'not_triggered_reasons': not_triggered,
         'direction': direction,
+        'recent_days': recent_days,
     }
 
 
@@ -2640,6 +3054,9 @@ def get_huijin_event_study(as_of_date=None, windows=None, include_warnings=False
     if as_of_date is None:
         as_of_date = _default_huijin_as_of_date()
     as_of = _nullable_norm_date(as_of_date)
+    group_map = {}
+    for row in get_huijin_watch_groups(active_only=True):
+        group_map.setdefault(str(row.get('code')), []).append(row.get('group_name'))
 
     events = []
     skipped = {
@@ -2765,6 +3182,8 @@ def get_huijin_event_study(as_of_date=None, windows=None, include_warnings=False
             events.append({
                 'code': str(code),
                 'name': info.get('name'),
+                'watch_groups': group_map.get(str(code), []),
+                'primary_group': (group_map.get(str(code), []) or ['未分组'])[0],
                 'signal_date': row.get('date'),
                 'entry_date': entry_date,
                 'observation_level': signal.get('observation_level'),
@@ -2779,45 +3198,16 @@ def get_huijin_event_study(as_of_date=None, windows=None, include_warnings=False
                 'disclosure_date': baseline.get('disclosure_date') if baseline else None,
             })
 
-    metrics = {}
-    ready_windows = []
-    insufficient_windows = []
-    for window in windows:
-        key = str(window)
-        usable = []
-        hits = 0
-        drawdown_values = []
-        for event in events:
-            ret_obj = (event.get('returns') or {}).get(key)
-            if not ret_obj:
-                continue
-            ret = ret_obj.get('return_pct')
-            if ret is None:
-                continue
-            usable.append(ret)
-            if event.get('direction') == 'contraction':
-                hits += 1 if ret < 0 else 0
-            else:
-                hits += 1 if ret > 0 else 0
-            dd = (event.get('max_drawdown_pct') or {}).get(key)
-            if dd is not None:
-                drawdown_values.append(dd)
-        count = len(usable)
-        window_ready = count >= min_events
-        if window_ready:
-            ready_windows.append(window)
-        else:
-            insufficient_windows.append(window)
-        metrics[key] = {
-            'window': window,
-            'signal_count': count,
-            'directional_hit_rate': round(hits / count * 100, 2) if count else None,
-            'average_return_pct': round(sum(usable) / count, 4) if count else None,
-            'max_drawdown_pct': min(drawdown_values) if drawdown_values else None,
-            'sample_status': 'ok' if window_ready else 'sample_insufficient',
-        }
+    metrics, ready_windows, insufficient_windows = _compute_event_metrics(events, windows, min_events)
     ready = bool(windows) and not insufficient_windows
     partial_ready = bool(ready_windows)
+    breakdowns = {
+        'by_observation_level': _event_breakdown(events, windows, min_events, 'observation_level'),
+        'by_direction': _event_breakdown(events, windows, min_events, 'direction'),
+        'by_source_level': _event_breakdown(events, windows, min_events, 'source_level'),
+        'by_quality_filter_level': _event_breakdown(events, windows, min_events, 'quality_filter_level'),
+        'by_group': _event_breakdown(events, windows, min_events, 'primary_group'),
+    }
 
     skip_labels = {
         'blocked': 'blocked 样本被质量门禁过滤',
@@ -2875,9 +3265,11 @@ def get_huijin_event_study(as_of_date=None, windows=None, include_warnings=False
             'signal_rule': 'T日基于当日及历史份额/audit生成观察信号',
             'return_rule': '收益从T+1或后续首个K线收盘价开始评估',
             'quality_filter': '默认过滤 blocked/warning；include_warnings=true 可纳入 warning',
+            'breakdown_rule': '按观察等级、方向、数据源等级、质量门禁和观察组分层统计',
             'advice_boundary': '复盘结果不生成直接买卖建议',
         },
         'metrics': metrics,
+        'breakdowns': breakdowns,
         'events': events[:100],
         'event_count': len(events),
         'candidate_point_count': candidate_points,

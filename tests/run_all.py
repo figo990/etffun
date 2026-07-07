@@ -181,10 +181,34 @@ if sz_item:
 pool = next((g for g in overview.get('groups', []) if g['group_name'] == '沪深300'), None)
 check('huijin group components', pool and any(c['code'] == '159919' for c in pool.get('components', [])))
 check('huijin group warning codes', pool and '159919' in pool.get('warning_codes', []))
+check('huijin group resonance fields',
+      pool and 'resonance_level' in pool and 'dominant_direction' in pool
+      and 'expansion_count' in pool and isinstance(pool.get('resonance_reasons'), list),
+      pool)
+check('huijin group market context',
+      pool and isinstance(pool.get('market_context'), dict)
+      and 'support_level' in pool.get('market_context', {}),
+      pool)
 check('huijin overview issue counts', isinstance(overview.get('quality_issue_counts'), dict))
 check('huijin overview quality summary',
       overview.get('quality_summary', {}).get('formula_calculable_count', 0) >= 1
       and 'source_level_counts' in overview.get('quality_summary', {}))
+check('huijin overview quality summary stale fields',
+      'stale_count' in overview.get('quality_summary', {})
+      and 'market_context_count' in overview.get('quality_summary', {})
+      and isinstance(overview.get('quality_summary', {}).get('expected_share_dates'), list))
+check('huijin overview market context summary',
+      isinstance(overview.get('market_context'), dict)
+      and 'insufficient_count' in overview.get('market_context', {}))
+check('huijin ten x recent days field',
+      ov_item and isinstance(ov_item.get('ten_x_signal', {}).get('recent_days'), list))
+one_day_stale_overview = get_huijin_overview(as_of_date='2026-01-19')
+one_day_stale_item = next((i for i in one_day_stale_overview['items'] if i['code'] == '510300'), None)
+check('huijin one-trading-day stale marked',
+      one_day_stale_item and one_day_stale_item['latest_share']['stale'] is True
+      and one_day_stale_item['latest_share']['expected_share_date'] == '2026-01-19'
+      and one_day_stale_item['source_level'] == 'C',
+      one_day_stale_item)
 stale_overview = get_huijin_overview(as_of_date='2026-01-23')
 stale_item = next((i for i in stale_overview['items'] if i['code'] == '510300'), None)
 check('huijin stale S1 marked', stale_item and stale_item['latest_share']['stale'] is True)
@@ -271,6 +295,11 @@ check('huijin event study readiness fields',
       and 'ready_windows' in event_study
       and 'insufficient_windows' in event_study
       and 'ready_windows' in event_study.get('sample_gate', {}))
+check('huijin event study breakdowns',
+      isinstance(event_study.get('breakdowns'), dict)
+      and 'by_observation_level' in event_study.get('breakdowns', {})
+      and 'by_source_level' in event_study.get('breakdowns', {})
+      and 'by_group' in event_study.get('breakdowns', {}))
 upsert_data_quality_issues([{
     'issue_type': 'GLOBAL_WARN_FOR_BACKTEST',
     'severity': 'warning',
@@ -376,7 +405,8 @@ check('app.js huijin renamed preset', '汇金 ETF 份额观察' in js_text and '
 check('app.js huijin detail meta', 'renderHuijinDetailMeta' in js_text)
 check('app.js huijin quality/backtest text',
       '问题清单' in js_text and '未触发原因' in js_text and 'ETF池贡献拆解' in js_text
-      and '样本不足/仅可观察' in js_text and '复盘门禁' in js_text)
+      and '样本不足/仅可观察' in js_text and '复盘门禁' in js_text
+      and '共振' in js_text and '市场环境辅助' in js_text and '分层复盘' in js_text)
 check('app.js huijin backtest loader', 'loadHuijinBacktest' in js_text and '/api/huijin/backtest' in js_text)
 old_huijin_labels = ['国家队' + '增仓', '汇金' + '动态调仓', '汇金 ETF 份额' + '异动']
 check('app.js no old huijin labels', all(label not in js_text for label in old_huijin_labels))

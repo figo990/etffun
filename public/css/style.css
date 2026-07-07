@@ -250,6 +250,12 @@ tbody tr:hover td{background:#fff6e5}
 .hjw-table tbody tr:hover td{background:#f0faf8}
 .hjw-srt{cursor:pointer;user-select:none}
 .hjw-srt:hover{background:#d5dde5}
+.hjw-filter-bar{display:flex;gap:6px;padding:6px 10px;background:#fff;border-bottom:1px solid #e2e8f0;flex-wrap:wrap}
+.hjw-filter-btn{display:inline-flex;align-items:center;gap:3px;padding:3px 10px;border:1px solid #cbd5e0;border-radius:3px;font-size:12px;color:#4a5568;cursor:pointer;background:#f7fafc;user-select:none}
+.hjw-filter-btn:hover{background:#edf2f7;border-color:#a0aec0}
+.hjw-filter-btn.hjw-filter-active{background:#00b894;color:#fff;border-color:#00b894}
+.hjw-filter-btn b{font-weight:600}
+.hjw-filter-btn.hjw-filter-active b{color:#fff}
 .hjw-ok{color:#2f855a;font-weight:600}
 .hjw-block{color:#c53030;font-weight:600}
 .hjw-warn{display:inline-block;margin-left:4px;padding:1px 4px;border-radius:2px;background:#fff3cd;color:#8a5a00;font-size:11px}
@@ -257,6 +263,7 @@ tbody tr:hover td{background:#fff6e5}
 .hjt-title .hjt-note{font-size:11px;color:#718096;font-weight:400;margin-left:auto}
 .hjt-title .hjt-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px}
 .hjt-title .hjt-dot.ok{background:#00b894}
+.hjt-subtitle{padding:6px 10px 2px;color:#4a5568;font-size:12px;font-weight:600;background:#fff}
 .hjw-cffex-table td:nth-child(4){max-width:180px;overflow:hidden;text-overflow:ellipsis}
 
 /* Signal badge */
