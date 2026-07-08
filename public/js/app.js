@@ -1170,6 +1170,7 @@ function renderHuijinWatch(){
     return 0;
   });
   // Apply filter
+  const cffexMeta = huijinOverview.cffex_meta || {};
   const filteredRows = rows.filter(item => {
     if(_hjwFilter === 'all') return true;
     if(_hjwFilter === 'enhanced') return item.observation_level === 'strong' || item.observation_level === 'enhanced';
@@ -1406,7 +1407,6 @@ const tagEls = tags.map(t => {
 
   // ─── Table 3: 期指辅助 ───
   html += '<div class="hjt-title"><span class="hjt-dot ok"></span>期指辅助<span class="hjt-note">中金所排名，不进入核心公式，仅辅助验证</span></div>';
-  const cffexMeta = huijinOverview.cffex_meta || {};
   if(cffexPositionRank.length){
     const rankRows = cffexPositionRank.slice(0, 40);
     const metaLine = cffexMeta.available
