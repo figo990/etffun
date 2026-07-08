@@ -1051,6 +1051,16 @@ function renderHuijinDetailMeta(code){
     html += '<div class="hjw-detail-row"><span class="hjw-detail-label">当前(S1)</span><span class="hjw-detail-val">' + s1 + '亿</span>';
     html += '<span class="hjw-detail-label">倍数(B)</span><span class="hjw-detail-val">' + b + '%</span>';
     html += '<span class="hjw-detail-label">区间(Y)</span><span class="hjw-detail-val">' + fmtRatio(iv.y_min) + ' ~ ' + fmtRatio(iv.y_max) + '</span></div>';
+    // Trend direction vs price correlation
+    const dir = item.share_change_direction || 'unknown';
+    const dirLabel = item.share_change_direction_label || '';
+    const obsLabel = item.observation_label || '观望';
+    const chg5d = item.share_change_ratio_5d;
+    html += '<div class="hjw-detail-row"><span class="hjw-detail-label">观察等级</span><span class="hjw-detail-val">' + esc(obsLabel) + '</span>';
+    if(chg5d != null) html += '<span class="hjw-detail-label">份额5日</span><span class="hjw-detail-val' + (chg5d < -2 ? ' neg' : chg5d > 2 ? ' pos' : '') + '">' + Number(chg5d).toFixed(1) + '%</span>';
+    if(item.share_change_ratio_20d != null) html += '<span class="hjw-detail-label">20日</span><span class="hjw-detail-val">' + Number(item.share_change_ratio_20d).toFixed(1) + '%</span>';
+    html += '</div>';
+    html += '<div class="hjw-detail-row" style="font-size:11px;color:#718096">区间方向: ' + esc(dirLabel) + '。观察等级反映份额变化趋势，与K线价格走势无直接对应关系。</div>';
 
     if(item.ten_x_signal && item.ten_x_signal.active){
       const days = item.ten_x_signal.consecutive_days || 0;
