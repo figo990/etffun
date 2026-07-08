@@ -996,7 +996,7 @@ function renderHuijinBacktestPanel(){
     html += '</div>';
   }
   const metrics = huijinBacktest.metrics || {};
-  html += '<div class="hjw-table-wrap"><table class="hjw-table hjw-backtest-table"><thead><tr><th>窗口</th><th>信号次数</th><th>方向命中率</th><th>平均收益</th><th>最大回撤</th><th>状态</th></tr></thead><tbody>';
+  html += '<div class="hjw-table-wrap"><table class="hjw-table hjw-backtest-table"><thead><tr><th>窗口</th><th>信号次数</th><th title="增强观察：信号后N日收盘价上涨占比；减弱观察：信号后N日收盘价下跌占比">方向命中率</th><th>平均收益</th><th>最大回撤</th><th>状态</th></tr></thead><tbody>';
   ['5','10','20','60'].forEach(k => {
     const m = metrics[k] || {};
     html += `<tr>
@@ -1189,7 +1189,7 @@ function renderHuijinWatch(){
   html += '<p><b>限制</b>：份额变化不必然来自中央汇金；Y区间是相对S0归一化口径，不是实时持仓；不输出买卖建议。</p>';
   html += '</div></details>';
   html += `<div class="hjw-summary"><span>区间可算 <b>${formulaCalc}</b></span><span>质量警告 <b>${warningDoc}</b></span><span>数据阻断 <b>${dataBlocked}</b></span><span>推断源日期 <b>${inferred}</b></span>${tenX ? `<span class="hjw-signal">10x份额扩张 <b>${tenX}</b></span>` : ''}</div>`;
-  html += '<div class="hjw-subhead"><span>系统数据截至 <b>' + esc(as_of) + '</b></span><span>有效份额日 <b>' + esc(latest_share_date) + '</b></span><span>观察池 <b>14</b> 只</span></div>';
+  html += '<div class="hjw-subhead"><span>系统 <b>' + esc(as_of) + '</b></span><span>份额 <b>' + esc(latest_share_date) + '</b></span><span>期指 <b>' + esc(cffexMeta.latest_date || '--') + '</b></span><span>生成 <b>' + esc((huijinOverview.generated_at || '').slice(0, 10)) + '</b></span><span>观察池 <b>14</b> 只</span></div>';
   html += '<div class="hjw-subnote">观察池基于基金年报汇金持仓数据。已排除: 588000(华夏科创50ETF)—2025年报前十名持有人未见中央汇金。</div>';
   html += '</div>';
 
