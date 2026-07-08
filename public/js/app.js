@@ -1085,7 +1085,7 @@ function renderHuijinDetailMeta(code){
   const qmarks = [];
   if(inferred) qmarks.push('<span class="hjw-warn">推断</span>');
   if(hasDocUrl === 'N') qmarks.push('<span class="hjw-block">缺公告</span>');
-  if(share.stale) qmarks.push('<span class="hjw-warn">滞后' + esc(share.stale_days || '') + '天</span>');
+  if(share.stale) qmarks.push('<span class="hjw-warn">滞后' + esc(Math.max(0, (share.stale_days || 0) - 1)) + '天</span>');
   const tags = item.quality_tags || [];
   tags.forEach(t => {
     const isWarn = t.includes('inferred') || t === 'legacy_source';
@@ -1308,7 +1308,7 @@ const tagEls = tags.map(t => {
       <td>${base.report_period ? esc(base.report_period) : _na()}</td>
       <td>${base.disclosure_date ? esc(base.disclosure_date) : _na()}</td>
       <td>${share.date ? esc(share.date) : _na()} ${inferredMark}
-      ${share.stale ? `<span class="hjw-warn" title="${esc(share.data_lag_reason || '')}">滞后${esc(share.stale_days || '')}天</span>` : ''}</td>
+      ${share.stale ? `<span class="hjw-warn" title="${esc(share.data_lag_reason || '')}">滞后${esc(Math.max(0, (share.stale_days || 0) - 1))}天</span>` : ''}</td>
     </tr>`;
   });
   // Summary row

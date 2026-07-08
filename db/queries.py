@@ -1368,6 +1368,7 @@ def _latest_valid_share(code, as_of_date, exchange):
         row_date = _nullable_norm_date(row['date'])
         stale = bool(expected_share_date and row_date and row_date < expected_share_date)
         stale_days = _date_gap_days(expected_share_date, row_date) if stale else 0
+        stale = stale_days > 1  # 1 day behind is acceptable (yesterday's data)
         data_lag_reason = None
         if stale:
             data_lag_reason = 'latest_share_before_expected_trading_date'
