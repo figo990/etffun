@@ -95,13 +95,13 @@ tasks:
     enabled: true
     timeout: 60
     retry: 1
-huijin_audit:
+  huijin_audit:
     display_name: 汇金审计
     schedule: "25 20 * * 1-5"
     enabled: true
     timeout: 120
     retry: 1
-cffex_position_rank:
+  cffex_position_rank:
     display_name: CFFEX持仓排名
     schedule: "35 20 * * 1-5"
     enabled: true
