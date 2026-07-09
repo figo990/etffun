@@ -880,6 +880,7 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.getElementById('colToggleBtn').style.display = isHuijin ? 'none' : '';
     document.getElementById('filterToggleBtn').style.display = isHuijin ? 'none' : '';
     document.getElementById('refreshBtn').style.display = isHuijin ? 'none' : '';
+    document.getElementById('syncBtn').style.display = isHuijin ? 'none' : '';
   });
 });
 
@@ -2056,6 +2057,28 @@ document.getElementById('searchInput').addEventListener('input', () => {
 });
 document.getElementById('exchangeFilter').addEventListener('change', () => render());
 document.getElementById('refreshBtn').addEventListener('click', loadData);
+
+document.getElementById('syncBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('syncBtn');
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '同步中...';
+  try {
+    const r = await fetch('/api/etf/sync', { method: 'POST' });
+    const d = await r.json();
+    if (d.ok && d.synced) {
+      btn.textContent = '✓ 已同步';
+      loadData();
+    } else if (d.ok && !d.synced) {
+      btn.textContent = '✓ 已最新';
+    } else {
+      btn.textContent = '✗ 失败';
+    }
+  } catch (e) {
+    btn.textContent = '✗ 失败';
+  }
+  setTimeout(() => { btn.disabled = false; btn.textContent = origText; }, 2000);
+});
 
 document.getElementById('sectorFlowToggle').addEventListener('click', () => {
   const panel = document.getElementById('sectorFlowPanel');
