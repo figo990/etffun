@@ -2065,18 +2065,16 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
   try {
     const r = await fetch('/api/etf/sync', { method: 'POST' });
     const d = await r.json();
-    if (d.ok && d.synced) {
-      btn.textContent = '✓ 已同步';
+    if (d.ok) {
+      btn.textContent = '✓ ' + d.message;
       loadData();
-    } else if (d.ok && !d.synced) {
-      btn.textContent = '✓ 已最新';
     } else {
       btn.textContent = '✗ 失败';
     }
   } catch (e) {
     btn.textContent = '✗ 失败';
   }
-  setTimeout(() => { btn.disabled = false; btn.textContent = origText; }, 2000);
+  setTimeout(() => { btn.disabled = false; btn.textContent = origText; }, 3000);
 });
 
 document.getElementById('sectorFlowToggle').addEventListener('click', () => {

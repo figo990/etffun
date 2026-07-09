@@ -1,7 +1,6 @@
-import os
 from flask import Blueprint, jsonify, request
-from db import get_prices, query_kline, query_latest_sector_flow, query_latest_index_valuation, query_latest_bond_yield, query_latest_margin, safe_error
-from db.sync import sync_all_tables, get_db_paths
+from db import get_prices, query_kline, query_latest_sector_flow, query_latest_index_valuation, query_latest_bond_yield, query_latest_margin, safe_error, bootstrap_huijin_support_data
+from db.sync import sync_all_tables
 from ..cache import cache
 
 etf_api = Blueprint('etf_api', __name__)
@@ -72,19 +71,49 @@ def get_bond_yield():
 @etf_api.route('/api/etf/sync', methods=['POST'])
 def manual_sync():
     try:
-        write_path, read_path = get_db_paths()
-        if not os.path.exists(write_path):
-            return jsonify({'ok': False, 'message': '写数据库不存在'}), 400
+        results = []
 
-        write_mtime = os.path.getmtime(write_path)
-        read_mtime = os.path.getmtime(read_path) if os.path.exists(read_path) else 0
+        # 1. Collect SSE shares
+        try:
+            from collector.tasks.shares_sse import SharesSSETask
+            t = SharesSSETask()
+            sse_count = t._execute()
+            results.append(f'SSE({sse_count})')
+        except ImportError:
+            results.append('SSE(模块未加载)')
+        except Exception as e:
+            results.append(f'SSE({safe_error(e)})')
 
-        if write_mtime <= read_mtime:
-            return jsonify({'ok': True, 'synced': False, 'message': '数据已最新，无需同步'})
+        # 2. Collect SZSE shares
+        try:
+            from collector.tasks.shares_szse import SharesSZSECTask
+            t = SharesSZSECTask()
+            szse_count = t._execute()
+            results.append(f'SZSE({szse_count})')
+        except ImportError:
+            results.append('SZSE(模块未加载)')
+        except Exception as e:
+            results.append(f'SZSE({safe_error(e)})')
 
-        count = sync_all_tables()
+        # 3. Refresh Huijin state
+        try:
+            hr = bootstrap_huijin_support_data(refresh_issues=True, sync_read=False)
+            results.append(f'汇金({hr.get("quality_issues", 0)}问题)')
+        except Exception as e:
+            results.append(f'汇金({safe_error(e)})')
+
+        # 4. Sync write DB → read DB
+        try:
+            count = sync_all_tables()
+            results.append(f'同步({count}张表)')
+        except Exception as e:
+            results.append(f'同步({safe_error(e)})')
+
+        # 5. Invalidate cache
         cache.invalidate()
-        return jsonify({'ok': True, 'synced': True, 'message': f'同步完成（{count} 张表）'})
+
+        msg = ' | '.join(results)
+        return jsonify({'ok': True, 'message': msg})
     except Exception as e:
         return jsonify({'error': safe_error(e)}), 500
 
