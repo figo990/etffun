@@ -880,7 +880,6 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.getElementById('colToggleBtn').style.display = isHuijin ? 'none' : '';
     document.getElementById('filterToggleBtn').style.display = isHuijin ? 'none' : '';
     document.getElementById('refreshBtn').style.display = isHuijin ? 'none' : '';
-    document.getElementById('syncBtn').style.display = isHuijin ? 'none' : '';
   });
 });
 
