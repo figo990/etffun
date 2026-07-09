@@ -1,13 +1,13 @@
 tasks:
   shares_sse:
     display_name: 上交所ETF份额
-    schedule: "0 18 * * 1-5"
+    schedule: "0 20 * * 1-5"
     enabled: true
     timeout: 120
     retry: 3
   shares_szse:
     display_name: 深交所ETF份额
-    schedule: "5 18 * * 1-5"
+    schedule: "5 20 * * 1-5"
     enabled: true
     timeout: 120
     retry: 3
@@ -61,13 +61,13 @@ tasks:
     retry: 2
   kline:
     display_name: 日K线数据
-    schedule: "10 18 * * 1-5"
+    schedule: "10 20 * * 1-5"
     enabled: true
     timeout: 600
     retry: 2
   sector_fund_flow:
     display_name: 行业资金流向
-    schedule: "0 18 * * 1-5"
+    schedule: "0 20 * * 1-5"
     enabled: true
     timeout: 120
     retry: 2
@@ -79,13 +79,13 @@ tasks:
     retry: 2
   bond_yield:
     display_name: 国债收益率
-    schedule: "10 18 * * 1-5"
+    schedule: "10 20 * * 1-5"
     enabled: true
     timeout: 60
     retry: 2
   margin_detail:
     display_name: 融资融券
-    schedule: "15 18 * * 1-5"
+    schedule: "15 20 * * 1-5"
     enabled: true
     timeout: 120
     retry: 2
@@ -95,15 +95,15 @@ tasks:
     enabled: true
     timeout: 60
     retry: 1
-  huijin_audit:
-    display_name: 汇金数据审计
-    schedule: "25 18 * * 1-5"
+huijin_audit:
+    display_name: 汇金审计
+    schedule: "25 20 * * 1-5"
     enabled: true
     timeout: 120
     retry: 1
-  cffex_position_rank:
-    display_name: 中金所持仓排名
-    schedule: "35 18 * * 1-5"
+cffex_position_rank:
+    display_name: CFFEX持仓排名
+    schedule: "35 20 * * 1-5"
     enabled: true
     timeout: 120
     retry: 2
