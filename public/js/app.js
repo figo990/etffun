@@ -1239,6 +1239,7 @@ function renderHuijinWatch(){
     + '<th title="当前观察等级及未触发增强/减弱观察的具体原因">观察/未触发原因</th>'
     + '<th class="hjw-srt" data-sort="can_calculate_interval" title="Y_min~Y_max归一化区间，Y_max=B=S1/S0，Y_min=max(0,B-(1-A))">区间/原因' + srt('can_calculate_interval') + '</th>'
     + '<th class="hjw-srt" data-sort="vs_baseline_pct" title="当前份额相对披露日S0的增减比例">变动强度' + srt('vs_baseline_pct') + '</th>'
+    + '<th class="hjw-srt" data-sort="share_change_ratio_1d">1日%' + srt('share_change_ratio_1d') + '</th>'
     + '<th class="hjw-srt" data-sort="share_change_ratio_5d">5日%' + srt('share_change_ratio_5d') + '</th>'
     + '<th class="hjw-srt" data-sort="share_change_ratio_10d">10日%' + srt('share_change_ratio_10d') + '</th>'
     + '<th class="hjw-srt" data-sort="share_change_ratio_20d">20日%' + srt('share_change_ratio_20d') + '</th>'
@@ -1300,6 +1301,7 @@ const tagEls = tags.map(t => {
       <td class="hjw-result" title="${esc(obsTitle)}">${obsDetail ? esc(obsDetail) : _na()}</td>
       <td class="hjw-result" title="${esc(result)}">${result || _na()}</td>
       <td class="hjw-num" title="相对披露日S0的变化率">${item.vs_baseline_pct != null ? chg(item.vs_baseline_pct) : _na()}</td>
+      <td class="hjw-num">${chg(item.share_change_ratio_1d)}</td>
       <td class="hjw-num">${chg(item.share_change_ratio_5d)}</td>
       <td class="hjw-num">${chg(item.share_change_ratio_10d)}</td>
       <td class="hjw-num">${chg(item.share_change_ratio_20d)}</td>
